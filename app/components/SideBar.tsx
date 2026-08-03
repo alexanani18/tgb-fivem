@@ -12,7 +12,6 @@ import {
   UserLock,
   Users,
   Hourglass,
-  LaptopMinimalCheck,
   UserShield,
   LogOut,
 } from "lucide-react";
