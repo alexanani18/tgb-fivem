@@ -58,13 +58,15 @@ export default function Home() {
     >
       <div className="absolute inset-0 bg-black/65" />
 
-      <section className="relative z-10 w-full max-w-md rounded-2xl border border-green-500/30 bg-black/75 p-8 shadow-2xl backdrop-blur-md">
+      <section className="relative z-10 w-full max-w-md rounded-2xl border border-[#B8904D]/40 bg-black/75 p-8 shadow-2xl backdrop-blur-md">
         <div className="mb-8 text-center">
-          <p className="mb-2 text-sm uppercase tracking-[0.35em] text-green-500">
+          <p className="mb-2 text-sm uppercase tracking-[0.35em] text-[#B8904D]/90">
             Restricted access
           </p>
 
-          <h1 className="text-4xl font-bold tracking-wider text-white">TGB</h1>
+          <h1 className="text-4xl font-bold tracking-wider text-[#B8904D]">
+            TGB
+          </h1>
 
           <p className="mt-3 text-sm text-zinc-400">
             Introdu datele de acces pentru a continua.
@@ -123,7 +125,7 @@ export default function Home() {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full rounded-lg border border-green-500 bg-green-600 px-4 py-3 font-semibold tracking-wide text-white transition hover:bg-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/40 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-lg border border-[#B8904D]/40 bg-[#B8904D]/40 px-4 py-3 font-semibold tracking-wide text-white transition hover:bg-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/40 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isLoading ? "SE VERIFICĂ..." : "AUTENTIFICARE"}
           </button>

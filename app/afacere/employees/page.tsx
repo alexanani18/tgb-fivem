@@ -16,7 +16,9 @@ export default function DashboardPage() {
           <p className="mt-4 max-w-2xl text-zinc-300">
             Aici vor apărea informațiile generale despre angajatii din afacere.
             Acestia pot fi adaugati sau sterși doar de catre liderul afacerii.
-            (ADMIN)
+            (ADMIN) Angajat poate fi modificat de catre lider (ADMIN) Acesta
+            trebuie sa aibe upload pentru poza buletin, informatii din
+            `conctractele` de pe discord.
           </p>
         </div>
       </div>
