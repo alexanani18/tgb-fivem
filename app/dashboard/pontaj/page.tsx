@@ -1,6 +1,6 @@
-import AppShell from "../components/AppShell";
+import AppShell from "../../components/AppShell";
 
-export default function DashboardPage() {
+export default function InventoryPage() {
   return (
     <AppShell backgroundImage="/img/business-image.png">
       <div className="p-8">
@@ -9,12 +9,10 @@ export default function DashboardPage() {
             Afacere
           </p>
 
-          <h1 className="mt-3 text-3xl font-bold text-white">
-            Dashboard Afacere
-          </h1>
+          <h1 className="mt-3 text-3xl font-bold text-white">Pontaj</h1>
 
-          <p className="mt-4 max-w-2xl text-zinc-300">
-            Aici vor apărea informațiile generale despre afacere.
+          <p className="mt-4 text-zinc-300">
+            Aici vor apărea informațiile despre pontaj.
           </p>
         </div>
       </div>

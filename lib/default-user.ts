@@ -6,7 +6,7 @@ import { db } from "./db";
 async function createUser() {
   try {
     const username = "vladimir";
-    const password = "Test1234!";
+    const password = "asd";
     const role = "ADMIN";
 
     const passwordHash = await bcrypt.hash(password, 12);

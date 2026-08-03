@@ -102,18 +102,18 @@ router.post("/login", async (req, res) => {
   }
 });
 
-router.get("/me", (req, res) => {
-  if (!req.session.user) {
-    return res.status(401).json({
-      success: false,
-      message: "Nu există o sesiune activă.",
-    });
-  }
+// router.get("/me", (req, res) => {
+//   if (!req.session.user) {
+//     return res.status(401).json({
+//       success: false,
+//       message: "Nu există o sesiune activă.",
+//     });
+//   }
 
-  return res.status(200).json({
-    success: true,
-    user: req.session.user,
-  });
-});
+//   return res.status(200).json({
+//     success: true,
+//     user: req.session.user,
+//   });
+// });
 
 export default router;
