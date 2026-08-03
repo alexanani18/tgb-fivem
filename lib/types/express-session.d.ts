@@ -5,7 +5,7 @@ declare module "express-session" {
     user?: {
       id: number;
       username: string;
-      role: "ADMIN" | "PARTICIPANT";
+      role: string;
     };
   }
 }

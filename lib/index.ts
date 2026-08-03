@@ -6,6 +6,7 @@ import session from "express-session";
 
 import { db } from "./db";
 import authRoutes from "./routes/auth";
+import notificationRoutes from "./routes/notifications";
 
 const app = express();
 
@@ -52,7 +53,7 @@ app.use(
 */
 
 app.use("/auth", authRoutes);
-
+app.use("/api/notifications", notificationRoutes);
 /*
 |--------------------------------------------------------------------------
 | Database Test

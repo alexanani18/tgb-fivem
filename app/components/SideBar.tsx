@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   BriefcaseBusiness,
   ChevronDown,
@@ -16,8 +16,7 @@ import {
   UserShield,
   LogOut,
 } from "lucide-react";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 
 export type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA";
 
@@ -30,6 +29,7 @@ interface SidebarItem {
   label: string;
   href: string;
   icon: typeof House;
+  showUnreadBadge?: boolean;
 }
 
 interface SidebarSection {
@@ -39,6 +39,14 @@ interface SidebarSection {
   roles: UserRole[];
   children: SidebarItem[];
 }
+
+interface UnreadCountResponse {
+  success: boolean;
+  unreadCount?: number;
+  message?: string;
+}
+
+const API_URL = "http://localhost:5000";
 
 const sidebarSections: SidebarSection[] = [
   {
@@ -58,9 +66,10 @@ const sidebarSections: SidebarSection[] = [
         icon: Users,
       },
       {
-        label: "Notificari",
+        label: "Notificări",
         href: "/afacere/notificari",
         icon: Mail,
+        showUnreadBadge: true,
       },
       {
         label: "Pontaj",
@@ -68,7 +77,7 @@ const sidebarSections: SidebarSection[] = [
         icon: Hourglass,
       },
       {
-        label: "Invoiri",
+        label: "Învoiri",
         href: "/afacere/invoiri",
         icon: UserShield,
       },
@@ -78,10 +87,7 @@ const sidebarSections: SidebarSection[] = [
     id: "mafia",
     label: "Mafia",
     icon: UserLock,
-
-    // Mafia apare doar utilizatorilor cu rolul MAFIA.
     roles: ["MAFIA", "ADMIN"],
-
     children: [
       {
         label: "Dashboard",
@@ -92,11 +98,6 @@ const sidebarSections: SidebarSection[] = [
         label: "Membri",
         href: "/mafia/members",
         icon: Users,
-      },
-      {
-        label: "Task",
-        href: "/mafia/task",
-        icon: LaptopMinimalCheck,
       },
     ],
   },
@@ -109,23 +110,91 @@ export default function DashboardSidebar({
   const pathname = usePathname();
   const router = useRouter();
 
-  async function handleLogout() {
-    try {
-      await fetch("http://localhost:5000/auth/logout", {
-        method: "POST",
-        credentials: "include",
-      });
-
-      router.replace("/");
-    } catch (error) {
-      console.error("Logout failed:", error);
-    }
-  }
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const [openSections, setOpenSections] = useState({
     business: pathname.startsWith("/afacere"),
     mafia: pathname.startsWith("/mafia"),
   });
+
+  const loadUnreadCount = useCallback(async () => {
+    try {
+      const response = await fetch(
+        `${API_URL}/api/notifications/unread-count`,
+        {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        },
+      );
+
+      const data = (await response.json()) as UnreadCountResponse;
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message ??
+            "Numărul notificărilor necitite nu a putut fi încărcat.",
+        );
+      }
+
+      setUnreadCount(Number(data.unreadCount ?? 0));
+    } catch (error) {
+      console.error("Failed to load unread notification count:", error);
+
+      setUnreadCount(0);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      void loadUnreadCount();
+    }, 0);
+
+    const intervalId = window.setInterval(() => {
+      void loadUnreadCount();
+    }, 30_000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
+    };
+  }, [loadUnreadCount]);
+
+  useEffect(() => {
+    function handleNotificationsUpdated() {
+      void loadUnreadCount();
+    }
+
+    window.addEventListener(
+      "notifications-updated",
+      handleNotificationsUpdated,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "notifications-updated",
+        handleNotificationsUpdated,
+      );
+    };
+  }, [loadUnreadCount]);
+
+  async function handleLogout() {
+    try {
+      const response = await fetch(`${API_URL}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error("Logout failed.");
+      }
+
+      router.replace("/");
+      router.refresh();
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
+  }
 
   const visibleSections = sidebarSections.filter((section) =>
     section.roles.includes(role),
@@ -139,8 +208,8 @@ export default function DashboardSidebar({
   }
 
   function isItemActive(href: string) {
-    if (href === "/dashboard") {
-      return pathname === "/dashboard";
+    if (href === "/afacere") {
+      return pathname === "/afacere";
     }
 
     if (href === "/mafia") {
@@ -148,6 +217,14 @@ export default function DashboardSidebar({
     }
 
     return pathname.startsWith(href);
+  }
+
+  function formatUnreadCount(count: number) {
+    if (count > 99) {
+      return "99+";
+    }
+
+    return String(count);
   }
 
   return (
@@ -195,6 +272,9 @@ export default function DashboardSidebar({
                     const ItemIcon = item.icon;
                     const isActive = isItemActive(item.href);
 
+                    const shouldShowUnreadBadge =
+                      item.showUnreadBadge === true && unreadCount > 0;
+
                     return (
                       <Link
                         key={item.href}
@@ -210,7 +290,18 @@ export default function DashboardSidebar({
                           strokeWidth={1.8}
                         />
 
-                        <span>{item.label}</span>
+                        <span className="min-w-0 flex-1 truncate">
+                          {item.label}
+                        </span>
+
+                        {shouldShowUnreadBadge && (
+                          <span
+                            className="inline-flex min-w-5 shrink-0 items-center justify-center rounded-full bg-green-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-black"
+                            aria-label={`${unreadCount} notificări necitite`}
+                          >
+                            {formatUnreadCount(unreadCount)}
+                          </span>
+                        )}
                       </Link>
                     );
                   })}
@@ -224,7 +315,7 @@ export default function DashboardSidebar({
       <div className="mt-auto border-t border-white/10 pt-5">
         <button
           type="button"
-          onClick={handleLogout}
+          onClick={() => void handleLogout()}
           className="mb-4 flex w-full items-center gap-3 rounded-lg px-3 py-3 text-zinc-300 transition hover:bg-red-500/10 hover:text-red-400"
         >
           <LogOut className="h-5 w-5" />
@@ -234,7 +325,7 @@ export default function DashboardSidebar({
 
         <p className="truncate px-3 text-sm text-zinc-300">{username}</p>
 
-        <p className="mt-1 px-3 text-xs uppercase tracking-wider text-green-500">
+        <p className="mt-1 px-3 text-xs tracking-wider text-green-500 uppercase">
           {role}
         </p>
       </div>
