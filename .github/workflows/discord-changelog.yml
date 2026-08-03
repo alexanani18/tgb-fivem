@@ -57,7 +57,7 @@ jobs:
                     },
                     {
                       name: "🔗 Commit",
-                      value: "[View on GitHub](" + $url + ")",
+                      value: ("[View on GitHub](" + $url + ")"),
                       inline: false
                     },
                     {
