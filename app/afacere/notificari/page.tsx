@@ -1,6 +1,4 @@
 "use client";
-
-import Image from "next/image";
 import {
   useCallback,
   useEffect,
@@ -8,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+
 import {
   AlertCircle,
   Check,
@@ -27,78 +26,23 @@ import {
 } from "lucide-react";
 
 import AppShell from "../../components/AppShell";
-import type { UserRole } from "../../components/SideBar";
 
-interface SessionUser {
-  id: number;
-  username: string;
-  role: UserRole;
-}
+import NotificationImages from "./components/NotificationImages";
+import EmployeeNotificationImage from "./components/EmployeeNotificationImage";
 
-interface SessionResponse {
-  user: SessionUser;
-}
-
-interface NotificationImage {
-  id: number;
-  image_path: string;
-  position: number;
-}
-
-interface Notification {
-  id: number;
-  recipient_id: number;
-  created_by: number;
-  title: string;
-  message: string;
-  is_read: number | boolean;
-  created_at: string;
-  updated_at: string;
-  creator_username?: string;
-  recipient_username?: string;
-  images?: NotificationImage[];
-}
-
-interface Recipient {
-  id: number;
-  username: string;
-  user_role: string;
-}
-
-interface NotificationsResponse {
-  success: boolean;
-  notifications?: Notification[];
-  message?: string;
-}
-
-interface RecipientsResponse {
-  success: boolean;
-  recipients?: Recipient[];
-  message?: string;
-}
-
-interface NotificationMutationResponse {
-  success: boolean;
-  message?: string;
-  notification?: Notification;
-  updatedCount?: number;
-}
-
-interface NotificationForm {
-  recipientId: string;
-  title: string;
-  message: string;
-  includeImages: boolean;
-}
+import {
+  EMPTY_NOTIFICATION_FORM,
+  type Notification,
+  type NotificationForm,
+  type NotificationMutationResponse,
+  type NotificationsResponse,
+  type Recipient,
+  type RecipientsResponse,
+  type SessionResponse,
+  type SessionUser,
+} from "./types";
 
 const API_URL = "http://localhost:5000";
-
-const EMPTY_FORM: NotificationForm = {
-  recipientId: "",
-  title: "",
-  message: "",
-  includeImages: false,
-};
 
 function isNotificationRead(notification: Notification): boolean {
   return notification.is_read === 1 || notification.is_read === true;
@@ -125,7 +69,7 @@ export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [recipients, setRecipients] = useState<Recipient[]>([]);
 
-  const [form, setForm] = useState<NotificationForm>(EMPTY_FORM);
+  const [form, setForm] = useState<NotificationForm>(EMPTY_NOTIFICATION_FORM);
 
   const [editingNotificationId, setEditingNotificationId] = useState<
     number | null
@@ -336,7 +280,7 @@ export default function NotificationsPage() {
         ...currentNotifications,
       ]);
 
-      setForm(EMPTY_FORM);
+      setForm(EMPTY_NOTIFICATION_FORM);
 
       setSuccessMessage(
         data.message ??
@@ -1154,7 +1098,7 @@ function EmployeeNotificationCard({
             {notification.message}
           </p>
 
-          <NotificationImages images={notification.images ?? []} />
+          <EmployeeNotificationImages images={notification.images ?? []} />
 
           {notification.updated_at !== notification.created_at && (
             <p className="mt-4 text-xs italic text-zinc-500">
@@ -1168,8 +1112,12 @@ function EmployeeNotificationCard({
   );
 }
 
-function NotificationImages({ images }: { images: NotificationImage[] }) {
-  if (images.length === 0) {
+function EmployeeNotificationImages({
+  images,
+}: {
+  images: Notification["images"];
+}) {
+  if (!images || images.length === 0) {
     return null;
   }
 
@@ -1179,37 +1127,30 @@ function NotificationImages({ images }: { images: NotificationImage[] }) {
 
   return (
     <div className="mt-6">
-      <div className="mb-3 flex items-center justify-between">
-        <p className="inline-flex items-center gap-2 text-sm font-medium text-white">
-          <Images className="h-4 w-4 text-green-400" />
-          Imagini atașate
-        </p>
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="inline-flex items-center gap-2 text-sm font-medium text-white">
+            <Images className="h-4 w-4 text-green-400" />
+            Imagini de verificat
+          </p>
+
+          <p className="mt-1 text-xs text-zinc-500">
+            Încarcă o dovadă separată pentru fiecare imagine.
+          </p>
+        </div>
 
         <span className="text-xs text-zinc-500">
           {sortedImages.length} imagini
         </span>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-2">
         {sortedImages.map((image, index) => (
-          <div
+          <EmployeeNotificationImage
             key={image.id}
-            className="overflow-hidden rounded-xl border border-white/10 bg-black/40"
-          >
-            <div className="relative aspect-video overflow-hidden">
-              <Image
-                src={image.image_path}
-                alt={`Imagine notificare ${index + 1}`}
-                fill
-                sizes="(max-width: 640px) 100vw, 50vw"
-                className="object-cover transition duration-300 hover:scale-105"
-              />
-
-              <span className="absolute top-3 left-3 rounded-lg bg-black/75 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm">
-                Imaginea {index + 1}
-              </span>
-            </div>
-          </div>
+            image={image}
+            imageNumber={index + 1}
+          />
         ))}
       </div>
     </div>

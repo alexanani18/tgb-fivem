@@ -32,7 +32,7 @@ interface SidebarItem {
 }
 
 interface SidebarSection {
-  id: "business" | "mafia";
+  id: "business" | "mafia" | "control-panel";
   label: string;
   icon: typeof House;
   roles: UserRole[];
@@ -83,6 +83,19 @@ const sidebarSections: SidebarSection[] = [
     ],
   },
   {
+    id: "control-panel",
+    label: "Control Panel",
+    icon: UserLock,
+    roles: ["ADMIN"],
+    children: [
+      {
+        label: "Review Dovadă",
+        href: "/afacere/notificari/review",
+        icon: UserShield,
+      },
+    ],
+  },
+  {
     id: "mafia",
     label: "Mafia",
     icon: UserLock,
@@ -114,6 +127,7 @@ export default function DashboardSidebar({
   const [openSections, setOpenSections] = useState({
     business: pathname.startsWith("/afacere"),
     mafia: pathname.startsWith("/mafia"),
+    "control-panel": pathname.startsWith("/afacere/notificari/review"),
   });
 
   const loadUnreadCount = useCallback(async () => {
@@ -213,6 +227,10 @@ export default function DashboardSidebar({
 
     if (href === "/mafia") {
       return pathname === "/mafia";
+    }
+
+    if (href === "/afacere/notificari") {
+      return pathname.startsWith("/afacere/notificari");
     }
 
     return pathname.startsWith(href);

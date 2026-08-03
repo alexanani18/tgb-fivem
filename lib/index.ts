@@ -3,10 +3,12 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import session from "express-session";
+import path from "node:path";
 
 import { db } from "./db";
 import authRoutes from "./routes/auth";
 import notificationRoutes from "./routes/notifications";
+import notificationSubmissionRoutes from "./routes/notificationSubmissions";
 
 const app = express();
 
@@ -22,6 +24,13 @@ if (!SESSION_SECRET) {
 app.use(express.json());
 
 app.use(express.urlencoded({ extended: true }));
+
+app.use(
+  "/notification-submissions",
+  express.static(
+    path.join(process.cwd(), "public", "notification-submissions"),
+  ),
+);
 
 app.use(
   cors({
@@ -54,6 +63,8 @@ app.use(
 
 app.use("/auth", authRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/notification-submissions", notificationSubmissionRoutes);
+
 /*
 |--------------------------------------------------------------------------
 | Database Test
