@@ -18,6 +18,8 @@ jobs:
           AUTHOR: ${{ github.actor }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
           COMMIT_URL: ${{ github.event.head_commit.url }}
+          TZ: Europe/Bucharest
+
         run: |
           PAYLOAD=$(jq -n \
             --arg repository "$REPOSITORY" \
@@ -25,29 +27,43 @@ jobs:
             --arg author "$AUTHOR" \
             --arg message "$COMMIT_MESSAGE" \
             --arg url "$COMMIT_URL" \
+            --arg time "$(date '+%d.%m.%Y %H:%M')" \
             '{
               username: "GitHub Changelog",
               embeds: [
                 {
                   title: "🚀 Actualizare nouă",
-                  description: $message,
-                  url: $url,
                   color: 5763719,
                   fields: [
                     {
-                      name: "Repository",
-                      value: $repository,
+                      name: "📝 Commit",
+                      value: $message,
+                      inline: false
+                    },
+                    {
+                      name: "👤 Autor",
+                      value: $author,
                       inline: true
                     },
                     {
-                      name: "Branch",
+                      name: "🌿 Branch",
                       value: $branch,
                       inline: true
                     },
                     {
-                      name: "Autor",
-                      value: $author,
-                      inline: true
+                      name: "📦 Repository",
+                      value: $repository,
+                      inline: false
+                    },
+                    {
+                      name: "🔗 Commit",
+                      value: "[View on GitHub](" + $url + ")",
+                      inline: false
+                    },
+                    {
+                      name: "🕒 Ora",
+                      value: $time,
+                      inline: false
                     }
                   ],
                   footer: {
@@ -57,7 +73,7 @@ jobs:
               ]
             }')
 
-          curl \
+          curl --fail-with-body \
             -H "Content-Type: application/json" \
             -X POST \
             -d "$PAYLOAD" \
