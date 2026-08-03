@@ -23,6 +23,7 @@ import {
   User,
   Users,
   X,
+  Hourglass,
 } from "lucide-react";
 
 import AppShell from "../../components/AppShell";
@@ -64,10 +65,45 @@ function formatNotificationDate(dateValue: string): string {
   }).format(date);
 }
 
+function getNotificationTimeLeft(createdAt: string): {
+  expired: boolean;
+  label: string;
+} {
+  const createdDate = new Date(createdAt);
+
+  if (Number.isNaN(createdDate.getTime())) {
+    return {
+      expired: false,
+      label: "Timp indisponibil",
+    };
+  }
+
+  const expiresAt = createdDate.getTime() + 24 * 60 * 60 * 1000;
+  const remainingMilliseconds = expiresAt - Date.now();
+
+  if (remainingMilliseconds <= 0) {
+    return {
+      expired: true,
+      label: "Expirată",
+    };
+  }
+
+  const totalMinutes = Math.floor(remainingMilliseconds / (1000 * 60));
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  return {
+    expired: false,
+    label: `${hours}h ${minutes}m`,
+  };
+}
+
 export default function NotificationsPage() {
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [recipients, setRecipients] = useState<Recipient[]>([]);
+  const [, setTimerTick] = useState(0);
 
   const [form, setForm] = useState<NotificationForm>(EMPTY_NOTIFICATION_FORM);
 
@@ -215,6 +251,16 @@ export default function NotificationsPage() {
       window.clearTimeout(timeoutId);
     };
   }, [successMessage]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setTimerTick((currentTick) => currentTick + 1);
+    }, 60_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   function resetMessages() {
     setErrorMessage(null);
@@ -1011,6 +1057,11 @@ function EmployeeNotificationCard({
   isProcessing,
   markNotificationAsRead,
 }: EmployeeNotificationCardProps) {
+  const hasImages = (notification.images?.length ?? 0) > 0;
+
+  const timeLeft = hasImages
+    ? getNotificationTimeLeft(notification.created_at)
+    : null;
   return (
     <article
       className={`relative overflow-hidden rounded-2xl border p-5 transition md:p-6 ${
@@ -1071,9 +1122,22 @@ function EmployeeNotificationCard({
 
                 <span className="inline-flex items-center gap-1.5">
                   <Clock3 className="h-3.5 w-3.5" />
-
                   {formatNotificationDate(notification.created_at)}
                 </span>
+
+                {timeLeft && (
+                  <span
+                    className={`inline-flex items-center gap-1.5 font-medium ${
+                      timeLeft.expired ? "text-red-400" : "text-amber-300"
+                    }`}
+                  >
+                    <Hourglass className="h-3.5 w-3.5" />
+
+                    {timeLeft.expired
+                      ? "Notificare expirată"
+                      : `Timp rămas: ${timeLeft.label}`}
+                  </span>
+                )}
               </div>
             </div>
 

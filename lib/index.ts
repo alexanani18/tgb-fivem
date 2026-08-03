@@ -9,6 +9,7 @@ import { db } from "./db";
 import authRoutes from "./routes/auth";
 import notificationRoutes from "./routes/notifications";
 import notificationSubmissionRoutes from "./routes/notificationSubmissions";
+import { cleanupExpiredNotifications } from "./services/notificationCleanup";
 
 const app = express();
 
@@ -83,6 +84,12 @@ async function startServer() {
 
     app.listen(PORT, () => {
       console.log(`🚀 Express API running on http://localhost:${PORT}`);
+
+      void cleanupExpiredNotifications();
+
+      setInterval(() => {
+        void cleanupExpiredNotifications();
+      }, 60 * 1000);
     });
   } catch (error) {
     console.error("❌ Database connection failed.");
