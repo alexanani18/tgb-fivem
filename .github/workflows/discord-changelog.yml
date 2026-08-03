@@ -1,0 +1,64 @@
+name: Discord Changelog
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  discord-notification:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send changelog to Discord
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          REPOSITORY: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          AUTHOR: ${{ github.actor }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          COMMIT_URL: ${{ github.event.head_commit.url }}
+        run: |
+          PAYLOAD=$(jq -n \
+            --arg repository "$REPOSITORY" \
+            --arg branch "$BRANCH" \
+            --arg author "$AUTHOR" \
+            --arg message "$COMMIT_MESSAGE" \
+            --arg url "$COMMIT_URL" \
+            '{
+              username: "GitHub Changelog",
+              embeds: [
+                {
+                  title: "🚀 Actualizare nouă",
+                  description: $message,
+                  url: $url,
+                  color: 5763719,
+                  fields: [
+                    {
+                      name: "Repository",
+                      value: $repository,
+                      inline: true
+                    },
+                    {
+                      name: "Branch",
+                      value: $branch,
+                      inline: true
+                    },
+                    {
+                      name: "Autor",
+                      value: $author,
+                      inline: true
+                    }
+                  ],
+                  footer: {
+                    text: "GitHub Changelog"
+                  }
+                }
+              ]
+            }')
+
+          curl \
+            -H "Content-Type: application/json" \
+            -X POST \
+            -d "$PAYLOAD" \
+            "$DISCORD_WEBHOOK"
