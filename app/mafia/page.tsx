@@ -9,7 +9,7 @@ export default function MafiaPage() {
         <h1 className="mt-3 text-3xl font-bold text-white">Dashboard Mafia</h1>
 
         <p className="mt-4 max-w-2xl text-zinc-300">
-          Aici vor apărea informațiile generale despre organizație.
+          Dahsboard mafie, de gandit ce punem aici.
         </p>
       </div>
     </div>

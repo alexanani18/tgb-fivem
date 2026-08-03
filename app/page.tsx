@@ -37,7 +37,7 @@ export default function Home() {
         return;
       }
 
-      router.push("/dashboard");
+      router.push("/afacere");
     } catch (error) {
       console.error("Login request failed:", error);
 

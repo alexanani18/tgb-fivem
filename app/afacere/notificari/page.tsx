@@ -9,10 +9,11 @@ export default function InventoryPage() {
             Afacere
           </p>
 
-          <h1 className="mt-3 text-3xl font-bold text-white">Inventar</h1>
+          <h1 className="mt-3 text-3xl font-bold text-white">Notificari</h1>
 
           <p className="mt-4 text-zinc-300">
-            Aici vor apărea informațiile despre inventar.
+            Aici vor aparea notificarile fiecarui membru al afacerii. Acestea
+            pot fi vizualizate doar de catre membru al cui mesaj este.
           </p>
         </div>
       </div>

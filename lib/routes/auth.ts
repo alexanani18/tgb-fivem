@@ -102,18 +102,34 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// router.get("/me", (req, res) => {
-//   if (!req.session.user) {
-//     return res.status(401).json({
-//       success: false,
-//       message: "Nu există o sesiune activă.",
-//     });
-//   }
+router.post("/logout", (req, res) => {
+  req.session.destroy((error) => {
+    if (error) {
+      return res.status(500).json({
+        message: "Nu s-a putut închide sesiunea.",
+      });
+    }
 
-//   return res.status(200).json({
-//     success: true,
-//     user: req.session.user,
-//   });
-// });
+    res.clearCookie("tgb-session");
+
+    return res.json({
+      message: "Logout successful.",
+    });
+  });
+});
+
+router.get("/me", (req, res) => {
+  if (!req.session.user) {
+    return res.status(401).json({
+      success: false,
+      message: "Nu există o sesiune activă.",
+    });
+  }
+
+  return res.status(200).json({
+    success: true,
+    user: req.session.user,
+  });
+});
 
 export default router;

@@ -8,13 +8,16 @@ import {
   ChevronRight,
   House,
   Mail,
-  Settings,
   Shield,
   UserLock,
   Users,
   Hourglass,
+  LaptopMinimalCheck,
+  UserShield,
+  LogOut,
 } from "lucide-react";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 export type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA";
 
@@ -46,23 +49,28 @@ const sidebarSections: SidebarSection[] = [
     children: [
       {
         label: "Dashboard",
-        href: "/dashboard",
+        href: "/afacere",
         icon: BriefcaseBusiness,
       },
       {
         label: "Angajați",
-        href: "/dashboard/employees",
+        href: "/afacere/employees",
         icon: Users,
       },
       {
         label: "Notificari",
-        href: "/dashboard/notificari",
+        href: "/afacere/notificari",
         icon: Mail,
       },
       {
         label: "Pontaj",
-        href: "/dashboard/pontaj",
+        href: "/afacere/pontaj",
         icon: Hourglass,
+      },
+      {
+        label: "Invoiri",
+        href: "/afacere/invoiri",
+        icon: UserShield,
       },
     ],
   },
@@ -86,9 +94,9 @@ const sidebarSections: SidebarSection[] = [
         icon: Users,
       },
       {
-        label: "Permisiuni",
-        href: "/mafia/permissions",
-        icon: Settings,
+        label: "Task",
+        href: "/mafia/task",
+        icon: LaptopMinimalCheck,
       },
     ],
   },
@@ -99,9 +107,23 @@ export default function DashboardSidebar({
   role,
 }: DashboardSidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function handleLogout() {
+    try {
+      await fetch("http://localhost:5000/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+
+      router.replace("/");
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
+  }
 
   const [openSections, setOpenSections] = useState({
-    business: pathname.startsWith("/dashboard"),
+    business: pathname.startsWith("/afacere"),
     mafia: pathname.startsWith("/mafia"),
   });
 
@@ -200,9 +222,19 @@ export default function DashboardSidebar({
       </nav>
 
       <div className="mt-auto border-t border-white/10 pt-5">
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="mb-4 flex w-full items-center gap-3 rounded-lg px-3 py-3 text-zinc-300 transition hover:bg-red-500/10 hover:text-red-400"
+        >
+          <LogOut className="h-5 w-5" />
+
+          <span>Logout</span>
+        </button>
+
         <p className="truncate px-3 text-sm text-zinc-300">{username}</p>
 
-        <p className="mt-1 px-3 text-xs tracking-wider text-green-500 uppercase">
+        <p className="mt-1 px-3 text-xs uppercase tracking-wider text-green-500">
           {role}
         </p>
       </div>

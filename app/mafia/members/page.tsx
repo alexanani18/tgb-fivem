@@ -7,7 +7,10 @@ export default function MafiaMembersPage() {
         <h1 className="mt-3 text-3xl font-bold text-white">Membri</h1>
 
         <p className="mt-4 text-zinc-300">
-          Aici vor apărea membrii organizației.
+          Lista cu toti membrii care fac parte din organizatia mafiota. Acestia
+          pot fi vizualizati doar de catre membrii care fac parte din MAFIE.
+          Membrii pot fi adaugati sau eliminati doar de catre liderul
+          organizatiei mafiote. (ADMIN)
         </p>
       </div>
     </div>
