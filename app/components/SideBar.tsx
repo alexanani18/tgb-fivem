@@ -85,6 +85,11 @@ const sidebarSections: SidebarSection[] = [
         href: "/afacere/add_user",
         icon: UserPlus,
       },
+      {
+        label: "Angajați",
+        href: "/afacere/angajati",
+        icon: Users,
+      },
     ],
   },
   {

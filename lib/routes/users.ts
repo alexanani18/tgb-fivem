@@ -12,8 +12,60 @@ type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA";
 interface ExistingUserRow extends RowDataPacket {
   id: number;
 }
+interface UserListRow extends RowDataPacket {
+  id: number;
+  username: string;
+  user_role: UserRole;
+  is_active: number;
+  created_at: Date;
+  updated_at: Date;
+}
 
 const allowedRoles: UserRole[] = ["ADMIN", "ANGAJAT", "MAFIA"];
+
+router.get("/", requireAdmin, async (_req, res) => {
+  try {
+    const [users] = await db.execute<UserListRow[]>(
+      `
+        SELECT
+          id,
+          username,
+          user_role,
+          is_active,
+          created_at,
+          updated_at
+        FROM users
+        ORDER BY
+          CASE user_role
+            WHEN 'ANGAJAT' THEN 1
+            WHEN 'MAFIA' THEN 2
+            WHEN 'ADMIN' THEN 3
+            ELSE 4
+          END,
+        username ASC
+      `,
+    );
+
+    return res.status(200).json({
+      success: true,
+      users: users.map((user) => ({
+        id: user.id,
+        username: user.username,
+        role: user.user_role,
+        isActive: Boolean(user.is_active),
+        createdAt: user.created_at,
+        updatedAt: user.updated_at,
+      })),
+    });
+  } catch (error) {
+    console.error("Get users error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Eroare internă la încărcarea utilizatorilor.",
+    });
+  }
+});
 
 router.post("/", requireAdmin, async (req, res) => {
   try {
