@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { ArrowLeft, FileText } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import AppShell from "../../../components/AppShell";
 
@@ -29,8 +29,9 @@ interface ContractData {
   acceptedRules: boolean;
   employeeSignatureName: string | null;
   status: ContractStatus;
-  rejectionReason: string | null;
   contractCreationBlocked: boolean;
+  rejectedByUserId: number | null;
+  rejectedByName: string | null;
   signedAt: string | null;
   approvedByUserId: number | null;
   approvedByName: string | null;
@@ -44,6 +45,11 @@ interface ContractData {
 interface ContractResponse {
   success: boolean;
   contract: ContractData;
+  message?: string;
+}
+
+interface ContractActionResponse {
+  success: boolean;
   message?: string;
 }
 
@@ -117,49 +123,108 @@ export default function AdminContractDetailsPage() {
   const [contract, setContract] = useState<ContractData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [isApproving, setIsApproving] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
+
+  const loadContract = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setErrorMessage("");
+
+      const response = await fetch(`${API_URL}/contracts/admin/${params.id}`, {
+        method: "GET",
+        credentials: "include",
+      });
+
+      const data = (await response.json()) as ContractResponse;
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message ?? "Contractul nu a putut fi încărcat.");
+      }
+
+      setContract(data.contract);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "A apărut o eroare necunoscută.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [params.id]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      async function loadContract() {
-        try {
-          setIsLoading(true);
-          setErrorMessage("");
-
-          const response = await fetch(
-            `${API_URL}/contracts/admin/${params.id}`,
-            {
-              method: "GET",
-              credentials: "include",
-            },
-          );
-
-          const data = (await response.json()) as ContractResponse;
-
-          if (!response.ok || !data.success) {
-            throw new Error(
-              data.message ?? "Contractul nu a putut fi încărcat.",
-            );
-          }
-
-          setContract(data.contract);
-        } catch (error) {
-          setErrorMessage(
-            error instanceof Error
-              ? error.message
-              : "A apărut o eroare necunoscută.",
-          );
-        } finally {
-          setIsLoading(false);
-        }
-      }
-
       void loadContract();
     }, 0);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [params.id]);
+  }, [loadContract]);
+
+  async function handleApproveContract() {
+    try {
+      setIsApproving(true);
+      setErrorMessage("");
+
+      const response = await fetch(
+        `${API_URL}/contracts/admin/${params.id}/approve`,
+        {
+          method: "POST",
+          credentials: "include",
+        },
+      );
+
+      const data = (await response.json()) as ContractActionResponse;
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message ?? "Contractul nu a putut fi aprobat.");
+      }
+
+      await loadContract();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "A apărut o eroare la aprobarea contractului.",
+      );
+    } finally {
+      setIsApproving(false);
+    }
+  }
+
+  async function handleRejectContract() {
+    try {
+      setIsRejecting(true);
+      setErrorMessage("");
+
+      const response = await fetch(
+        `${API_URL}/contracts/admin/${params.id}/reject`,
+        {
+          method: "POST",
+          credentials: "include",
+        },
+      );
+
+      const data = (await response.json()) as ContractActionResponse;
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message ?? "Contractul nu a putut fi respins.");
+      }
+
+      await loadContract();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "A apărut o eroare la respingerea contractului.",
+      );
+    } finally {
+      setIsRejecting(false);
+    }
+  }
 
   return (
     <AppShell backgroundImage="/img/business-image.png">
@@ -293,15 +358,65 @@ export default function AdminContractDetailsPage() {
                   </div>
                 </div>
 
-                {contract.rejectionReason && (
-                  <div className="mt-8 rounded-2xl border border-red-500/30 bg-red-500/10 p-6">
-                    <p className="text-xs font-semibold tracking-[0.15em] text-red-300 uppercase">
-                      Motiv respingere
+                {contract.status === "APPROVED" && (
+                  <div className="mt-8 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-6">
+                    <p className="text-xs font-semibold tracking-[0.15em] text-emerald-300 uppercase">
+                      Aprobare contract
                     </p>
 
-                    <p className="mt-3 text-sm leading-6 text-red-100">
-                      {contract.rejectionReason}
+                    <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                      <div className="rounded-xl border border-white/10 bg-black/20 p-5">
+                        <p className="text-xs font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+                          Aprobat de
+                        </p>
+
+                        <p className="mt-2 font-medium text-white">
+                          {contract.approvedByName ??
+                            "Administrator necunoscut"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-white/10 bg-black/20 p-5">
+                        <p className="text-xs font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+                          Data aprobării
+                        </p>
+
+                        <p className="mt-2 font-medium text-white">
+                          {formatDate(contract.approvedAt)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {contract.status === "REJECTED" && (
+                  <div className="mt-8 rounded-2xl border border-red-500/30 bg-red-500/10 p-6">
+                    <p className="text-xs font-semibold tracking-[0.15em] text-red-300 uppercase">
+                      Respingere contract
                     </p>
+
+                    <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                      <div className="rounded-xl border border-white/10 bg-black/20 p-5">
+                        <p className="text-xs font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+                          Respins de
+                        </p>
+
+                        <p className="mt-2 font-medium text-white">
+                          {contract.rejectedByName ??
+                            "Administrator necunoscut"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-white/10 bg-black/20 p-5">
+                        <p className="text-xs font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+                          Data respingerii
+                        </p>
+
+                        <p className="mt-2 font-medium text-white">
+                          {formatDate(contract.rejectedAt)}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -312,6 +427,28 @@ export default function AdminContractDetailsPage() {
                     condițiile contractului de angajare.
                   </p>
                 </div>
+
+                {contract.status === "PENDING_REVIEW" && (
+                  <div className="mt-8 flex flex-col gap-4 border-t border-white/10 pt-8 sm:flex-row sm:justify-end">
+                    <button
+                      type="button"
+                      onClick={() => void handleRejectContract()}
+                      disabled={isApproving || isRejecting}
+                      className="inline-flex items-center justify-center rounded-xl border border-red-500/30 bg-red-500/10 px-6 py-3 text-sm font-semibold text-red-300 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isRejecting ? "Se respinge..." : "Respinge contractul"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleApproveContract()}
+                      disabled={isApproving || isRejecting}
+                      className="inline-flex items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-6 py-3 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isApproving ? "Se aprobă..." : "Aprobă contractul"}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}

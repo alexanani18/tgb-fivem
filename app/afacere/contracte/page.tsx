@@ -6,7 +6,6 @@ import {
   FileText,
   RefreshCw,
   Search,
-  ShieldX,
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -14,12 +13,7 @@ import { useRouter } from "next/navigation";
 
 import AppShell from "../../components/AppShell";
 
-type ContractStatus =
-  | "DRAFT"
-  | "PENDING_REVIEW"
-  | "APPROVED"
-  | "REJECTED"
-  | "BLOCKED";
+type ContractStatus = "PENDING_REVIEW" | "APPROVED" | "REJECTED";
 
 interface ContractData {
   id: number;
@@ -87,12 +81,6 @@ function getStatusLabel(status: ContractStatus): string {
     case "REJECTED":
       return "Respins";
 
-    case "BLOCKED":
-      return "Blocat";
-
-    case "DRAFT":
-      return "Ciornă";
-
     default:
       return status;
   }
@@ -108,12 +96,6 @@ function getStatusClasses(status: ContractStatus): string {
 
     case "REJECTED":
       return "border-red-500/30 bg-red-500/10 text-red-300";
-
-    case "BLOCKED":
-      return "border-zinc-500/30 bg-zinc-500/10 text-zinc-300";
-
-    case "DRAFT":
-      return "border-blue-500/30 bg-blue-500/10 text-blue-300";
 
     default:
       return "border-white/10 bg-white/5 text-zinc-300";
@@ -201,10 +183,6 @@ export default function AdminContractsPage() {
     (contract) => contract.status === "REJECTED",
   ).length;
 
-  const blockedContractsCount = contracts.filter(
-    (contract) => contract.status === "BLOCKED",
-  ).length;
-
   return (
     <AppShell backgroundImage="/img/business-image.png">
       <div className="p-8">
@@ -286,7 +264,7 @@ export default function AdminContractsPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-zinc-500/20 bg-black/40 p-5">
+            {/* <div className="rounded-2xl border border-zinc-500/20 bg-black/40 p-5">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-zinc-400">Blocate</p>
@@ -300,7 +278,7 @@ export default function AdminContractsPage() {
                   <ShieldX size={24} />
                 </div>
               </div>
-            </div>
+            </div> */}
           </div>
 
           <div className="mt-8 flex flex-col justify-between gap-4 lg:flex-row lg:items-center">

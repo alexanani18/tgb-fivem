@@ -101,16 +101,17 @@ interface ContractRow extends RowDataPacket {
   accepted_rules: number;
   employee_signature_name: string | null;
   status: ContractStatus;
-  rejection_reason: string | null;
   contract_creation_blocked: number;
   signed_at: Date | null;
   approved_by_user_id: number | null;
   approved_by_name: string | null;
   admin_signature_path: string | null;
   approved_at: Date | null;
-  rejected_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  rejected_by_user_id: number | null;
+  rejected_by_name: string | null;
+  rejected_at: string | null;
 }
 
 interface AdminContractListRow extends RowDataPacket {
@@ -128,16 +129,17 @@ interface AdminContractListRow extends RowDataPacket {
   accepted_rules: number;
   employee_signature_name: string | null;
   status: ContractStatus;
-  rejection_reason: string | null;
   contract_creation_blocked: number;
   signed_at: Date | null;
   approved_by_user_id: number | null;
   approved_by_name: string | null;
   admin_signature_path: string | null;
   approved_at: Date | null;
-  rejected_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  rejected_by_user_id: number | null;
+  rejected_by_name: string | null;
+  rejected_at: string | null;
 }
 
 router.get("/me", requireAuth, async (req, res) => {
@@ -154,31 +156,34 @@ router.get("/me", requireAuth, async (req, res) => {
     const [contracts] = await db.execute<ContractRow[]>(
       `
         SELECT
-          id,
-          user_id,
-          first_name,
-          last_name,
-          age,
-          game_id,
-          ci_series,
-          phone_number,
-          city_hours,
-          identity_image_path,
-          accepted_rules,
-          employee_signature_name,
-          status,
-          rejection_reason,
-          contract_creation_blocked,
-          signed_at,
-          approved_by_user_id,
-          approved_by_name,
-          admin_signature_path,
-          approved_at,
-          rejected_at,
-          created_at,
-          updated_at
-        FROM employee_contracts
-        WHERE user_id = ?
+          ec.id,
+          ec.user_id,
+          ec.first_name,
+          ec.last_name,
+          ec.age,
+          ec.game_id,
+          ec.ci_series,
+          ec.phone_number,
+          ec.city_hours,
+          ec.identity_image_path,
+          ec.accepted_rules,
+          ec.employee_signature_name,
+          ec.status,
+          ec.contract_creation_blocked,
+          ec.signed_at,
+          ec.approved_by_user_id,
+          ec.approved_by_name,
+          ec.admin_signature_path,
+          ec.approved_at,
+          ec.rejected_by_user_id,
+          rejected_user.username AS rejected_by_name,
+          ec.rejected_at,
+          ec.created_at,
+          ec.updated_at
+        FROM employee_contracts ec
+        LEFT JOIN users rejected_user
+          ON rejected_user.id = ec.rejected_by_user_id
+        WHERE ec.user_id = ?
         LIMIT 1
       `,
       [sessionUser.id],
@@ -210,21 +215,21 @@ router.get("/me", requireAuth, async (req, res) => {
         acceptedRules: Boolean(contract.accepted_rules),
         employeeSignatureName: contract.employee_signature_name,
         status: contract.status,
-        rejectionReason: contract.rejection_reason,
         contractCreationBlocked: Boolean(contract.contract_creation_blocked),
         signedAt: contract.signed_at,
         approvedByUserId: contract.approved_by_user_id,
         approvedByName: contract.approved_by_name,
         adminSignaturePath: contract.admin_signature_path,
         approvedAt: contract.approved_at,
+        rejectedByUserId: contract.rejected_by_user_id,
+        rejectedByName: contract.rejected_by_name,
         rejectedAt: contract.rejected_at,
         createdAt: contract.created_at,
         updatedAt: contract.updated_at,
       },
-      canCreateContract:
-        sessionUser.role === "GUEST" &&
-        !contract.contract_creation_blocked &&
-        ["DRAFT", "REJECTED"].includes(contract.status),
+
+      // Dacă există deja un contract, nu poate crea altul.
+      canCreateContract: false,
     });
   } catch (error) {
     console.error("Get own contract error:", error);
@@ -480,7 +485,6 @@ router.post(
               accepted_rules = 1,
               employee_signature_name = ?,
               status = 'PENDING_REVIEW',
-              rejection_reason = NULL,
               signed_at = CURRENT_TIMESTAMP,
               approved_by_user_id = NULL,
               approved_by_name = NULL,
@@ -616,7 +620,6 @@ router.get("/admin", requireAdmin, async (_req, res) => {
           ec.accepted_rules,
           ec.employee_signature_name,
           ec.status,
-          ec.rejection_reason,
           ec.contract_creation_blocked,
           ec.signed_at,
           ec.approved_by_user_id,
@@ -659,7 +662,6 @@ router.get("/admin", requireAdmin, async (_req, res) => {
         acceptedRules: Boolean(contract.accepted_rules),
         employeeSignatureName: contract.employee_signature_name,
         status: contract.status,
-        rejectionReason: contract.rejection_reason,
         contractCreationBlocked: Boolean(contract.contract_creation_blocked),
         signedAt: contract.signed_at,
         approvedByUserId: contract.approved_by_user_id,
@@ -709,19 +711,22 @@ router.get("/admin/:contractId", requireAdmin, async (req, res) => {
           ec.accepted_rules,
           ec.employee_signature_name,
           ec.status,
-          ec.rejection_reason,
           ec.contract_creation_blocked,
           ec.signed_at,
           ec.approved_by_user_id,
           ec.approved_by_name,
           ec.admin_signature_path,
           ec.approved_at,
+          ec.rejected_by_user_id,
+          rejected_user.username AS rejected_by_name,
           ec.rejected_at,
           ec.created_at,
           ec.updated_at
         FROM employee_contracts ec
         INNER JOIN users u
           ON u.id = ec.user_id
+        LEFT JOIN users rejected_user
+          ON rejected_user.id = ec.rejected_by_user_id
         WHERE ec.id = ?
         LIMIT 1
       `,
@@ -754,13 +759,14 @@ router.get("/admin/:contractId", requireAdmin, async (req, res) => {
         acceptedRules: Boolean(contract.accepted_rules),
         employeeSignatureName: contract.employee_signature_name,
         status: contract.status,
-        rejectionReason: contract.rejection_reason,
         contractCreationBlocked: Boolean(contract.contract_creation_blocked),
         signedAt: contract.signed_at,
         approvedByUserId: contract.approved_by_user_id,
         approvedByName: contract.approved_by_name,
         adminSignaturePath: contract.admin_signature_path,
         approvedAt: contract.approved_at,
+        rejectedByUserId: contract.rejected_by_user_id,
+        rejectedByName: contract.rejected_by_name,
         rejectedAt: contract.rejected_at,
         createdAt: contract.created_at,
         updatedAt: contract.updated_at,
@@ -772,6 +778,187 @@ router.get("/admin/:contractId", requireAdmin, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Eroare internă la încărcarea contractului.",
+    });
+  }
+});
+
+router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
+  const connection = await db.getConnection();
+
+  try {
+    const contractId = Number(req.params.contractId);
+    const sessionUser = req.session.user;
+
+    if (!Number.isInteger(contractId) || contractId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "ID-ul contractului nu este valid.",
+      });
+    }
+
+    if (!sessionUser) {
+      return res.status(401).json({
+        success: false,
+        message: "Nu există o sesiune activă.",
+      });
+    }
+
+    await connection.beginTransaction();
+
+    interface ContractApprovalRow extends RowDataPacket {
+      id: number;
+      user_id: number;
+      status: ContractStatus;
+    }
+
+    const [contracts] = await connection.execute<ContractApprovalRow[]>(
+      `
+        SELECT
+          id,
+          user_id,
+          status
+        FROM employee_contracts
+        WHERE id = ?
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [contractId],
+    );
+
+    const contract = contracts[0];
+
+    if (!contract) {
+      await connection.rollback();
+
+      return res.status(404).json({
+        success: false,
+        message: "Contractul nu a fost găsit.",
+      });
+    }
+
+    if (contract.status !== "PENDING_REVIEW") {
+      await connection.rollback();
+
+      return res.status(409).json({
+        success: false,
+        message: "Contractul nu mai este în așteptare.",
+      });
+    }
+
+    const [userResult] = await connection.execute<ResultSetHeader>(
+      `
+        UPDATE users
+        SET
+          user_role = 'ANGAJAT'
+        WHERE id = ?
+          AND user_role = 'GUEST'
+      `,
+      [contract.user_id],
+    );
+
+    if (userResult.affectedRows === 0) {
+      await connection.rollback();
+
+      return res.status(409).json({
+        success: false,
+        message:
+          "Utilizatorul contractului nu mai are rolul GUEST și nu poate fi aprobat.",
+      });
+    }
+
+    await connection.execute<ResultSetHeader>(
+      `
+        UPDATE employee_contracts
+        SET
+          status = 'APPROVED',
+          approved_by_user_id = ?,
+          approved_by_name = ?,
+          approved_at = CURRENT_TIMESTAMP,
+          rejected_at = NULL,
+          admin_signature_path = NULL
+        WHERE id = ?
+      `,
+      [sessionUser.id, sessionUser.username, contractId],
+    );
+
+    await connection.commit();
+
+    return res.status(200).json({
+      success: true,
+      message: "Contractul a fost aprobat, iar utilizatorul a devenit ANGAJAT.",
+      approval: {
+        approvedByUserId: sessionUser.id,
+        approvedByName: sessionUser.username,
+        approvedAt: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    await connection.rollback();
+
+    console.error("Approve contract error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Eroare internă la aprobarea contractului.",
+    });
+  } finally {
+    connection.release();
+  }
+});
+
+router.post("/admin/:contractId/reject", requireAdmin, async (req, res) => {
+  try {
+    const contractId = Number(req.params.contractId);
+    const sessionUser = req.session.user;
+
+    if (!Number.isInteger(contractId) || contractId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "ID-ul contractului nu este valid.",
+      });
+    }
+
+    if (!sessionUser) {
+      return res.status(401).json({
+        success: false,
+        message: "Sesiunea utilizatorului nu este validă.",
+      });
+    }
+
+    const [result] = await db.execute<ResultSetHeader>(
+      `
+        UPDATE employee_contracts
+        SET
+          status = 'REJECTED',
+          rejected_by_user_id = ?,
+          rejected_at = CURRENT_TIMESTAMP,
+          approved_at = NULL,
+          approved_by_user_id = NULL,
+          approved_by_name = NULL,
+          admin_signature_path = NULL
+        WHERE id = ?
+          AND status = 'PENDING_REVIEW'
+      `,
+      [sessionUser.id, contractId],
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Contractul nu există sau nu mai este în așteptare.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Contract respins.",
+    });
+  } catch (error) {
+    console.error("Reject contract error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Eroare internă la respingerea contractului.",
     });
   }
 });

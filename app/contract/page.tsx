@@ -26,7 +26,6 @@ interface ContractData {
   acceptedRules: boolean;
   employeeSignatureName: string | null;
   status: ContractStatus;
-  rejectionReason: string | null;
   contractCreationBlocked: boolean;
   signedAt: string | null;
   approvedByUserId: number | null;
@@ -744,22 +743,98 @@ export default function ContractPage() {
                 )}
 
               {!isLoading && !errorMessage && contract && (
-                <div className="rounded-xl border border-white/10 bg-white/5 p-6">
-                  <p className="text-xs font-semibold tracking-[0.2em] text-zinc-500 uppercase">
-                    Status contract
-                  </p>
+                <>
+                  {contract.status === "PENDING_REVIEW" && (
+                    <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-6">
+                      <p className="text-xs font-semibold tracking-[0.2em] text-amber-300 uppercase">
+                        Contract în verificare
+                      </p>
 
-                  <p className="mt-2 text-lg font-semibold text-amber-400">
-                    {contract.status}
-                  </p>
+                      <h2 className="mt-3 text-xl font-semibold text-white">
+                        Contractul tău a fost trimis către administrație.
+                      </h2>
 
-                  <p className="mt-3 text-sm text-zinc-300">
-                    Contract pentru{" "}
-                    <span className="font-semibold text-white">
-                      {contract.lastName} {contract.firstName}
-                    </span>
-                  </p>
-                </div>
+                      <p className="mt-3 text-sm leading-6 text-zinc-300">
+                        Contractul pentru{" "}
+                        <span className="font-semibold text-white">
+                          {contract.lastName} {contract.firstName}
+                        </span>{" "}
+                        este în curs de verificare. Vei putea vedea aici
+                        rezultatul după ce un administrator îl verifică.
+                      </p>
+                    </div>
+                  )}
+
+                  {contract.status === "APPROVED" && (
+                    <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-6">
+                      <p className="text-xs font-semibold tracking-[0.2em] text-emerald-300 uppercase">
+                        Contract aprobat
+                      </p>
+
+                      <h2 className="mt-3 text-xl font-semibold text-white">
+                        Contractul tău a fost aprobat.
+                      </h2>
+
+                      <p className="mt-3 text-sm leading-6 text-zinc-300">
+                        Contractul pentru{" "}
+                        <span className="font-semibold text-white">
+                          {contract.lastName} {contract.firstName}
+                        </span>{" "}
+                        a fost verificat și aprobat de administrație.
+                      </p>
+
+                      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                        <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                          <p className="text-xs font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+                            Aprobat de
+                          </p>
+
+                          <p className="mt-2 font-medium text-white">
+                            {contract.approvedByName ?? "Administrator"}
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                          <p className="text-xs font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+                            Data aprobării
+                          </p>
+
+                          <p className="mt-2 font-medium text-white">
+                            {contract.approvedAt
+                              ? new Intl.DateTimeFormat("ro-RO", {
+                                  day: "2-digit",
+                                  month: "long",
+                                  year: "numeric",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                }).format(new Date(contract.approvedAt))
+                              : "Dată indisponibilă"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {contract.status === "REJECTED" && (
+                    <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-6">
+                      <p className="text-xs font-semibold tracking-[0.2em] text-red-300 uppercase">
+                        Contract respins
+                      </p>
+
+                      <h2 className="mt-3 text-xl font-semibold text-white">
+                        Contractul tău a fost respins.
+                      </h2>
+
+                      <p className="mt-3 text-sm leading-6 text-red-100/80">
+                        Contractul pentru{" "}
+                        <span className="font-semibold text-white">
+                          {contract.lastName} {contract.firstName}
+                        </span>{" "}
+                        nu a fost aprobat de administrație.
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
 
               {!isLoading &&
