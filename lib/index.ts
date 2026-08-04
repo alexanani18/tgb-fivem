@@ -11,6 +11,7 @@ import notificationRoutes from "./routes/notifications";
 import notificationSubmissionRoutes from "./routes/notificationSubmissions";
 import { cleanupExpiredNotifications } from "./services/notificationCleanup";
 import userRoutes from "./routes/users";
+import contractRoutes from "./routes/contracts";
 
 const app = express();
 
@@ -67,6 +68,7 @@ app.use("/auth", authRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/notification-submissions", notificationSubmissionRoutes);
 app.use("/users", userRoutes);
+app.use("/contracts", contractRoutes);
 
 /*
 |--------------------------------------------------------------------------

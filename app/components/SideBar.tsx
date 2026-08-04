@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
-export type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA" | "DEV";
+export type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA" | "DEV" | "GUEST";
 
 interface DashboardSidebarProps {
   username: string;
@@ -139,7 +139,7 @@ const sidebarSections: SidebarSection[] = [
     id: "cont",
     label: "Cont",
     icon: UserRoundCog,
-    roles: ["ADMIN", "ANGAJAT", "MAFIA", "DEV"],
+    roles: ["ADMIN", "ANGAJAT", "MAFIA", "DEV", "GUEST"],
     children: [
       {
         label: "Schimbare parola",

@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import type { RowDataPacket } from "mysql2";
 
 import { db } from "../db";
+import { requireAuth } from "../services/requireAuth";
 
 const router = Router();
 
@@ -10,7 +11,7 @@ interface UserRow extends RowDataPacket {
   id: number;
   username: string;
   password_hash: string;
-  user_role: "ADMIN" | "ANGAJAT" | "MAFIA" | "DEV";
+  user_role: "ADMIN" | "ANGAJAT" | "MAFIA" | "DEV" | "GUEST";
   is_active: number;
 }
 
@@ -246,7 +247,7 @@ router.patch("/schimbare-parola", async (req, res) => {
   }
 });
 
-router.get("/me", (req, res) => {
+router.get("/me", requireAuth, (req, res) => {
   if (!req.session.user) {
     return res.status(401).json({
       success: false,
