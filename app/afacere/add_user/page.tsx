@@ -1,17 +1,12 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import {
-  CheckCircle2,
-  Eye,
-  EyeOff,
-  LoaderCircle,
-  UserPlus,
-} from "lucide-react";
+import { CheckCircle2, LoaderCircle, UserPlus } from "lucide-react";
 
 import AppShell from "../../components/AppShell";
 
-type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA";
+type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA" | "GUEST";
+type Information = "GUEST" | "ACCES UTILIZATOR";
 
 interface CreateUserResponse {
   success: boolean;
@@ -26,10 +21,8 @@ interface CreateUserResponse {
 
 export default function AddUserPage() {
   const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [role, setRole] = useState<UserRole>("ANGAJAT");
+  const [role, setRole] = useState<UserRole>("GUEST");
 
-  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [errorMessage, setErrorMessage] = useState("");
@@ -48,11 +41,6 @@ export default function AddUserPage() {
       return;
     }
 
-    if (password.length < 8) {
-      setErrorMessage("Parola trebuie să conțină minimum 8 caractere.");
-      return;
-    }
-
     try {
       setIsSubmitting(true);
 
@@ -64,8 +52,8 @@ export default function AddUserPage() {
         },
         body: JSON.stringify({
           username: normalizedUsername,
-          password,
-          role,
+          password: "tgb",
+          role: role,
         }),
       });
 
@@ -83,9 +71,7 @@ export default function AddUserPage() {
       );
 
       setUsername("");
-      setPassword("");
-      setRole("ANGAJAT");
-      setShowPassword(false);
+      setRole("GUEST");
     } catch (error) {
       console.error("Create user request error:", error);
 
@@ -107,9 +93,7 @@ export default function AddUserPage() {
             Adaugă utilizator
           </h1>
 
-          <p className="mt-4 max-w-2xl text-zinc-300">
-            Creează un cont nou și setează rolul potrivit utilizatorului.
-          </p>
+          <p className="mt-4 max-w-2xl text-zinc-300">Creează un cont nou.</p>
 
           <div className="mt-8 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
             <section className="rounded-2xl border border-white/10 bg-black/30 p-6">
@@ -124,7 +108,7 @@ export default function AddUserPage() {
                   </h2>
 
                   <p className="mt-1 text-sm text-zinc-400">
-                    Completează toate câmpurile de mai jos.
+                    Completează câmpul de mai jos.
                   </p>
                 </div>
               </div>
@@ -151,64 +135,6 @@ export default function AddUserPage() {
                   />
 
                   <p className="text-xs text-zinc-500">Minimum 3 caractere.</p>
-                </div>
-
-                <div className="space-y-2">
-                  <label
-                    htmlFor="password"
-                    className="block text-sm font-medium text-zinc-200"
-                  >
-                    Parolă
-                  </label>
-
-                  <div className="relative">
-                    <input
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                      placeholder="Introdu parola"
-                      autoComplete="new-password"
-                      disabled={isSubmitting}
-                      className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 pr-12 text-sm text-white outline-none transition placeholder:text-zinc-500 hover:border-white/20 focus:border-green-500/50 disabled:cursor-not-allowed disabled:opacity-60"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((current) => !current)}
-                      disabled={isSubmitting}
-                      aria-label={
-                        showPassword ? "Ascunde parola" : "Afișează parola"
-                      }
-                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-zinc-400 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed"
-                    >
-                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
-
-                  <p className="text-xs text-zinc-500">Minimum 8 caractere.</p>
-                </div>
-
-                <div className="space-y-2">
-                  <label
-                    htmlFor="role"
-                    className="block text-sm font-medium text-zinc-200"
-                  >
-                    Rol
-                  </label>
-
-                  <select
-                    id="role"
-                    value={role}
-                    onChange={(event) =>
-                      setRole(event.target.value as UserRole)
-                    }
-                    disabled={isSubmitting}
-                    className="w-full rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition hover:border-white/20 focus:border-green-500/50 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <option value="ANGAJAT">ANGAJAT</option>
-                    <option value="MAFIA">MAFIA</option>
-                  </select>
                 </div>
 
                 {errorMessage && (
@@ -264,13 +190,13 @@ export default function AddUserPage() {
 
               <div className="mt-5 space-y-3">
                 <RoleCard
-                  title="ANGAJAT"
-                  description="Acces la dashboard-ul afacerii și la notificările angajaților."
+                  title="GUEST"
+                  description="Acest rol este pentru persoanele noi angajate. Acestea trebuie sa completeze un formular de angajare pentru a putea fi promovate la rolul de ANGAJAT."
                 />
 
                 <RoleCard
-                  title="MAFIA"
-                  description="Acces la secțiunea de mafie și la task-urile acesteia."
+                  title="ACCES UTILIZATOR"
+                  description="Parola pentru conturile noi este generată automat și poate fi schimbată ulterior de către utilizator. (`tgb`)"
                 />
               </div>
             </aside>
@@ -282,7 +208,7 @@ export default function AddUserPage() {
 }
 
 interface RoleCardProps {
-  title: UserRole;
+  title: Information;
   description: string;
 }
 

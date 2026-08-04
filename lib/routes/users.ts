@@ -7,7 +7,7 @@ import { requireAdmin } from "../services/requireAdmin";
 
 const router = Router();
 
-type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA";
+type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA" | "GUEST" | "DEV";
 
 interface ExistingUserRow extends RowDataPacket {
   id: number;
@@ -21,7 +21,7 @@ interface UserListRow extends RowDataPacket {
   updated_at: Date;
 }
 
-const allowedRoles: UserRole[] = ["ADMIN", "ANGAJAT", "MAFIA"];
+const allowedRoles: UserRole[] = ["GUEST", "ADMIN", "ANGAJAT", "MAFIA", "DEV"];
 
 router.get("/", requireAdmin, async (_req, res) => {
   try {
@@ -37,6 +37,7 @@ router.get("/", requireAdmin, async (_req, res) => {
         FROM users
         ORDER BY
           CASE user_role
+            WHEN 'GUEST' THEN 0
             WHEN 'ANGAJAT' THEN 1
             WHEN 'MAFIA' THEN 2
             WHEN 'ADMIN' THEN 3
@@ -96,13 +97,6 @@ router.post("/", requireAdmin, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Username-ul poate avea maximum 100 de caractere.",
-      });
-    }
-
-    if (password.length < 8) {
-      return res.status(400).json({
-        success: false,
-        message: "Parola trebuie să conțină minimum 8 caractere.",
       });
     }
 
