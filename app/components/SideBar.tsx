@@ -14,10 +14,12 @@ import {
   Hourglass,
   UserShield,
   LogOut,
+  ServerCog,
+  UserPlus,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
-export type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA";
+export type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA" | "DEV";
 
 interface DashboardSidebarProps {
   username: string;
@@ -32,7 +34,7 @@ interface SidebarItem {
 }
 
 interface SidebarSection {
-  id: "business" | "mafia" | "control-panel";
+  id: "business" | "mafia" | "control-panel" | "dev";
   label: string;
   icon: typeof House;
   roles: UserRole[];
@@ -60,25 +62,10 @@ const sidebarSections: SidebarSection[] = [
         icon: BriefcaseBusiness,
       },
       {
-        label: "Angajați",
-        href: "/afacere/employees",
-        icon: Users,
-      },
-      {
         label: "Notificări",
         href: "/afacere/notificari",
         icon: Mail,
         showUnreadBadge: true,
-      },
-      {
-        label: "Pontaj",
-        href: "/afacere/pontaj",
-        icon: Hourglass,
-      },
-      {
-        label: "Învoiri",
-        href: "/afacere/invoiri",
-        icon: UserShield,
       },
     ],
   },
@@ -92,6 +79,34 @@ const sidebarSections: SidebarSection[] = [
         label: "Review Dovadă",
         href: "/afacere/notificari/review",
         icon: UserShield,
+      },
+      {
+        label: "Adaugă utilizator",
+        href: "/afacere/add-user",
+        icon: UserPlus,
+      },
+    ],
+  },
+  {
+    id: "dev",
+    label: "Dev",
+    icon: ServerCog,
+    roles: ["DEV", "ADMIN"],
+    children: [
+      {
+        label: "Pontaj afacere",
+        href: "/afacere/pontaj",
+        icon: Hourglass,
+      },
+      {
+        label: "Învoiri afacere",
+        href: "/afacere/invoiri",
+        icon: UserShield,
+      },
+      {
+        label: "Angajați afacere",
+        href: "/afacere/employees",
+        icon: Users,
       },
     ],
   },
@@ -128,6 +143,7 @@ export default function DashboardSidebar({
     business: pathname.startsWith("/afacere"),
     mafia: pathname.startsWith("/mafia"),
     "control-panel": pathname.startsWith("/afacere/notificari/review"),
+    dev: pathname.startsWith("/dev"),
   });
 
   const loadUnreadCount = useCallback(async () => {

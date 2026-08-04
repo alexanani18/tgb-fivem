@@ -10,6 +10,7 @@ import authRoutes from "./routes/auth";
 import notificationRoutes from "./routes/notifications";
 import notificationSubmissionRoutes from "./routes/notificationSubmissions";
 import { cleanupExpiredNotifications } from "./services/notificationCleanup";
+import userRoutes from "./routes/users";
 
 const app = express();
 
@@ -65,6 +66,7 @@ app.use(
 app.use("/auth", authRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/notification-submissions", notificationSubmissionRoutes);
+app.use("/users", userRoutes);
 
 /*
 |--------------------------------------------------------------------------

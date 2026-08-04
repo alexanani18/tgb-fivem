@@ -10,7 +10,7 @@ interface UserRow extends RowDataPacket {
   id: number;
   username: string;
   password_hash: string;
-  user_role: "ADMIN" | "PARTICIPANT";
+  user_role: "ADMIN" | "ANGAJAT" | "MAFIA" | "DEV";
   is_active: number;
 }
 
