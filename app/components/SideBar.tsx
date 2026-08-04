@@ -22,6 +22,13 @@ import {
 import { useCallback, useEffect, useState } from "react";
 
 export type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA" | "DEV" | "GUEST";
+type SidebarSectionId =
+  | "business"
+  | "mafia"
+  | "control-panel"
+  | "dev"
+  | "cont"
+  | "contract";
 
 interface DashboardSidebarProps {
   username: string;
@@ -36,7 +43,7 @@ interface SidebarItem {
 }
 
 interface SidebarSection {
-  id: "business" | "mafia" | "control-panel" | "dev" | "cont";
+  id: SidebarSectionId;
   label: string;
   icon: typeof House;
   roles: UserRole[];
@@ -52,6 +59,19 @@ interface UnreadCountResponse {
 const API_URL = "http://localhost:5000";
 
 const sidebarSections: SidebarSection[] = [
+  {
+    id: "contract",
+    label: "Contracte",
+    icon: UserRoundCog,
+    roles: ["ADMIN", "ANGAJAT", "MAFIA", "DEV", "GUEST"],
+    children: [
+      {
+        label: "Contracte",
+        href: "/contract",
+        icon: UserRoundCog,
+      },
+    ],
+  },
   {
     id: "business",
     label: "Afacere",
@@ -91,6 +111,11 @@ const sidebarSections: SidebarSection[] = [
         label: "Angajați",
         href: "/afacere/angajati",
         icon: Users,
+      },
+      {
+        label: "Contracte",
+        href: "/afacere/contracte",
+        icon: UserRoundCog,
       },
     ],
   },
@@ -159,12 +184,19 @@ export default function DashboardSidebar({
 
   const [unreadCount, setUnreadCount] = useState(0);
 
-  const [openSections, setOpenSections] = useState({
+  const [openSections, setOpenSections] = useState<
+    Record<SidebarSectionId, boolean>
+  >({
     business: pathname.startsWith("/afacere"),
     mafia: pathname.startsWith("/mafia"),
-    "control-panel": pathname.startsWith("/afacere/notificari/review"),
+    "control-panel":
+      pathname.startsWith("/afacere/notificari/review") ||
+      pathname.startsWith("/afacere/add_user") ||
+      pathname.startsWith("/afacere/angajati") ||
+      pathname.startsWith("/afacere/contracte"),
     dev: pathname.startsWith("/dev"),
     cont: pathname.startsWith("/cont/schimbare-parola"),
+    contract: pathname.startsWith("/contract"),
   });
 
   const loadUnreadCount = useCallback(async () => {
@@ -272,6 +304,10 @@ export default function DashboardSidebar({
 
     if (href === "cont/schimbare-parola") {
       return pathname.startsWith("/cont/schimbare-parola");
+    }
+
+    if (href === "/contract") {
+      return pathname.startsWith("/contract");
     }
 
     return pathname.startsWith(href);

@@ -6,6 +6,7 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2";
 
 import { db } from "../db";
 import { requireAuth } from "../services/requireAuth";
+import { requireAdmin } from "../services/requireAdmin";
 
 const router = Router();
 
@@ -89,6 +90,33 @@ type ContractStatus =
 interface ContractRow extends RowDataPacket {
   id: number;
   user_id: number;
+  first_name: string;
+  last_name: string;
+  age: number;
+  game_id: string;
+  ci_series: string;
+  phone_number: string;
+  city_hours: number;
+  identity_image_path: string;
+  accepted_rules: number;
+  employee_signature_name: string | null;
+  status: ContractStatus;
+  rejection_reason: string | null;
+  contract_creation_blocked: number;
+  signed_at: Date | null;
+  approved_by_user_id: number | null;
+  approved_by_name: string | null;
+  admin_signature_path: string | null;
+  approved_at: Date | null;
+  rejected_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface AdminContractListRow extends RowDataPacket {
+  id: number;
+  user_id: number;
+  username: string;
   first_name: string;
   last_name: string;
   age: number;
@@ -568,5 +596,184 @@ router.post(
     }
   },
 );
+
+router.get("/admin", requireAdmin, async (_req, res) => {
+  try {
+    const [contracts] = await db.execute<AdminContractListRow[]>(
+      `
+        SELECT
+          ec.id,
+          ec.user_id,
+          u.username,
+          ec.first_name,
+          ec.last_name,
+          ec.age,
+          ec.game_id,
+          ec.ci_series,
+          ec.phone_number,
+          ec.city_hours,
+          ec.identity_image_path,
+          ec.accepted_rules,
+          ec.employee_signature_name,
+          ec.status,
+          ec.rejection_reason,
+          ec.contract_creation_blocked,
+          ec.signed_at,
+          ec.approved_by_user_id,
+          ec.approved_by_name,
+          ec.admin_signature_path,
+          ec.approved_at,
+          ec.rejected_at,
+          ec.created_at,
+          ec.updated_at
+        FROM employee_contracts ec
+        INNER JOIN users u
+          ON u.id = ec.user_id
+        ORDER BY
+          CASE ec.status
+            WHEN 'PENDING_REVIEW' THEN 0
+            WHEN 'REJECTED' THEN 1
+            WHEN 'APPROVED' THEN 2
+            WHEN 'BLOCKED' THEN 3
+            ELSE 4
+          END,
+          ec.signed_at DESC,
+          ec.created_at DESC
+      `,
+    );
+
+    return res.status(200).json({
+      success: true,
+      contracts: contracts.map((contract) => ({
+        id: contract.id,
+        userId: contract.user_id,
+        username: contract.username,
+        firstName: contract.first_name,
+        lastName: contract.last_name,
+        age: contract.age,
+        gameId: contract.game_id,
+        ciSeries: contract.ci_series,
+        phoneNumber: contract.phone_number,
+        cityHours: contract.city_hours,
+        identityImagePath: contract.identity_image_path,
+        acceptedRules: Boolean(contract.accepted_rules),
+        employeeSignatureName: contract.employee_signature_name,
+        status: contract.status,
+        rejectionReason: contract.rejection_reason,
+        contractCreationBlocked: Boolean(contract.contract_creation_blocked),
+        signedAt: contract.signed_at,
+        approvedByUserId: contract.approved_by_user_id,
+        approvedByName: contract.approved_by_name,
+        adminSignaturePath: contract.admin_signature_path,
+        approvedAt: contract.approved_at,
+        rejectedAt: contract.rejected_at,
+        createdAt: contract.created_at,
+        updatedAt: contract.updated_at,
+      })),
+    });
+  } catch (error) {
+    console.error("Get admin contracts error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Eroare internă la încărcarea contractelor.",
+    });
+  }
+});
+
+router.get("/admin/:contractId", requireAdmin, async (req, res) => {
+  try {
+    const contractId = Number(req.params.contractId);
+
+    if (!Number.isInteger(contractId) || contractId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "ID-ul contractului nu este valid.",
+      });
+    }
+
+    const [contracts] = await db.execute<AdminContractListRow[]>(
+      `
+        SELECT
+          ec.id,
+          ec.user_id,
+          u.username,
+          ec.first_name,
+          ec.last_name,
+          ec.age,
+          ec.game_id,
+          ec.ci_series,
+          ec.phone_number,
+          ec.city_hours,
+          ec.identity_image_path,
+          ec.accepted_rules,
+          ec.employee_signature_name,
+          ec.status,
+          ec.rejection_reason,
+          ec.contract_creation_blocked,
+          ec.signed_at,
+          ec.approved_by_user_id,
+          ec.approved_by_name,
+          ec.admin_signature_path,
+          ec.approved_at,
+          ec.rejected_at,
+          ec.created_at,
+          ec.updated_at
+        FROM employee_contracts ec
+        INNER JOIN users u
+          ON u.id = ec.user_id
+        WHERE ec.id = ?
+        LIMIT 1
+      `,
+      [contractId],
+    );
+
+    const contract = contracts[0];
+
+    if (!contract) {
+      return res.status(404).json({
+        success: false,
+        message: "Contractul nu a fost găsit.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      contract: {
+        id: contract.id,
+        userId: contract.user_id,
+        username: contract.username,
+        firstName: contract.first_name,
+        lastName: contract.last_name,
+        age: contract.age,
+        gameId: contract.game_id,
+        ciSeries: contract.ci_series,
+        phoneNumber: contract.phone_number,
+        cityHours: contract.city_hours,
+        identityImagePath: contract.identity_image_path,
+        acceptedRules: Boolean(contract.accepted_rules),
+        employeeSignatureName: contract.employee_signature_name,
+        status: contract.status,
+        rejectionReason: contract.rejection_reason,
+        contractCreationBlocked: Boolean(contract.contract_creation_blocked),
+        signedAt: contract.signed_at,
+        approvedByUserId: contract.approved_by_user_id,
+        approvedByName: contract.approved_by_name,
+        adminSignaturePath: contract.admin_signature_path,
+        approvedAt: contract.approved_at,
+        rejectedAt: contract.rejected_at,
+        createdAt: contract.created_at,
+        updatedAt: contract.updated_at,
+      },
+    });
+  } catch (error) {
+    console.error("Get admin contract details error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Eroare internă la încărcarea contractului.",
+    });
+  }
+});
 
 export default router;
