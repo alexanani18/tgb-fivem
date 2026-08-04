@@ -184,6 +184,7 @@ export default function AdminContractDetailsPage() {
       }
 
       await loadContract();
+      window.dispatchEvent(new Event("contracts-updated"));
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -215,6 +216,7 @@ export default function AdminContractDetailsPage() {
       }
 
       await loadContract();
+      window.dispatchEvent(new Event("contracts-updated"));
     } catch (error) {
       setErrorMessage(
         error instanceof Error

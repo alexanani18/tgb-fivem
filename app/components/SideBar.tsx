@@ -40,6 +40,7 @@ interface SidebarItem {
   href: string;
   icon: typeof House;
   showUnreadBadge?: boolean;
+  showPendingContractsBadge?: boolean;
 }
 
 interface SidebarSection {
@@ -53,6 +54,12 @@ interface SidebarSection {
 interface UnreadCountResponse {
   success: boolean;
   unreadCount?: number;
+  message?: string;
+}
+
+interface PendingContractsCountResponse {
+  success: boolean;
+  pendingCount?: number;
   message?: string;
 }
 
@@ -116,6 +123,7 @@ const sidebarSections: SidebarSection[] = [
         label: "Contracte",
         href: "/afacere/contracte",
         icon: UserRoundCog,
+        showPendingContractsBadge: true,
       },
     ],
   },
@@ -183,6 +191,7 @@ export default function DashboardSidebar({
   const router = useRouter();
 
   const [unreadCount, setUnreadCount] = useState(0);
+  const [pendingContractsCount, setPendingContractsCount] = useState(0);
 
   const [openSections, setOpenSections] = useState<
     Record<SidebarSectionId, boolean>
@@ -226,6 +235,67 @@ export default function DashboardSidebar({
       setUnreadCount(0);
     }
   }, []);
+
+  const loadPendingContractsCount = useCallback(async () => {
+    if (role !== "ADMIN") {
+      setPendingContractsCount(0);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/contracts/admin/pending-count`, {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      });
+
+      const data = (await response.json()) as PendingContractsCountResponse;
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message ??
+            "Numărul contractelor în așteptare nu a putut fi încărcat.",
+        );
+      }
+
+      setPendingContractsCount(Number(data.pendingCount ?? 0));
+    } catch (error) {
+      console.error("Failed to load pending contracts count:", error);
+
+      setPendingContractsCount(0);
+    }
+  }, [role]);
+
+  useEffect(() => {
+    if (role !== "ADMIN") {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void loadPendingContractsCount();
+    }, 0);
+
+    const intervalId = window.setInterval(() => {
+      void loadPendingContractsCount();
+    }, 30_000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
+    };
+  }, [loadPendingContractsCount, role]);
+
+  useEffect(() => {
+    function handleContractsUpdated() {
+      void loadPendingContractsCount();
+    }
+
+    window.addEventListener("contracts-updated", handleContractsUpdated);
+
+    return () => {
+      window.removeEventListener("contracts-updated", handleContractsUpdated);
+    };
+  }, [loadPendingContractsCount]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -369,6 +439,10 @@ export default function DashboardSidebar({
                     const shouldShowUnreadBadge =
                       item.showUnreadBadge === true && unreadCount > 0;
 
+                    const shouldShowPendingContractsBadge =
+                      item.showPendingContractsBadge === true &&
+                      pendingContractsCount > 0;
+
                     return (
                       <Link
                         key={item.href}
@@ -394,6 +468,15 @@ export default function DashboardSidebar({
                             aria-label={`${unreadCount} notificări necitite`}
                           >
                             {formatUnreadCount(unreadCount)}
+                          </span>
+                        )}
+
+                        {shouldShowPendingContractsBadge && (
+                          <span
+                            className="inline-flex min-w-5 shrink-0 items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-black"
+                            aria-label={`${pendingContractsCount} contracte în așteptare`}
+                          >
+                            {formatUnreadCount(pendingContractsCount)}
                           </span>
                         )}
                       </Link>

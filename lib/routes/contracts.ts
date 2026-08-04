@@ -683,6 +683,35 @@ router.get("/admin", requireAdmin, async (_req, res) => {
   }
 });
 
+router.get("/admin/pending-count", requireAdmin, async (_req, res) => {
+  try {
+    interface PendingContractsCountRow extends RowDataPacket {
+      pending_count: number;
+    }
+
+    const [rows] = await db.execute<PendingContractsCountRow[]>(
+      `
+        SELECT COUNT(*) AS pending_count
+        FROM employee_contracts
+        WHERE status = 'PENDING_REVIEW'
+      `,
+    );
+
+    return res.status(200).json({
+      success: true,
+      pendingCount: Number(rows[0]?.pending_count ?? 0),
+    });
+  } catch (error) {
+    console.error("Get pending contracts count error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Eroare internă la încărcarea numărului contractelor în așteptare.",
+    });
+  }
+});
+
 router.get("/admin/:contractId", requireAdmin, async (req, res) => {
   try {
     const contractId = Number(req.params.contractId);
