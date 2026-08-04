@@ -16,6 +16,8 @@ import {
   LogOut,
   ServerCog,
   UserPlus,
+  KeyRound,
+  UserRoundCog,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
@@ -34,7 +36,7 @@ interface SidebarItem {
 }
 
 interface SidebarSection {
-  id: "business" | "mafia" | "control-panel" | "dev";
+  id: "business" | "mafia" | "control-panel" | "dev" | "cont";
   label: string;
   icon: typeof House;
   roles: UserRole[];
@@ -133,6 +135,19 @@ const sidebarSections: SidebarSection[] = [
       },
     ],
   },
+  {
+    id: "cont",
+    label: "Cont",
+    icon: UserRoundCog,
+    roles: ["ADMIN", "ANGAJAT", "MAFIA", "DEV"],
+    children: [
+      {
+        label: "Schimbare parola",
+        href: "/cont/schimbare-parola",
+        icon: KeyRound,
+      },
+    ],
+  },
 ];
 
 export default function DashboardSidebar({
@@ -149,6 +164,7 @@ export default function DashboardSidebar({
     mafia: pathname.startsWith("/mafia"),
     "control-panel": pathname.startsWith("/afacere/notificari/review"),
     dev: pathname.startsWith("/dev"),
+    cont: pathname.startsWith("/cont/schimbare-parola"),
   });
 
   const loadUnreadCount = useCallback(async () => {
@@ -252,6 +268,10 @@ export default function DashboardSidebar({
 
     if (href === "/afacere/notificari") {
       return pathname.startsWith("/afacere/notificari");
+    }
+
+    if (href === "cont/schimbare-parola") {
+      return pathname.startsWith("/cont/schimbare-parola");
     }
 
     return pathname.startsWith(href);
