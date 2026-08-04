@@ -352,7 +352,7 @@ export default function EmployeeNotificationImage({
         )}
 
         {successMessage && (
-          <div className="mt-3 flex items-start gap-2 rounded-xl border border-green-500/30 bg-green-500/10 p-3 text-sm text-green-200">
+          <div className="mt-3 flex items-start gap-2 rounded-xl border border-green-500/30 bg-green-500/10 p-3 text-sm text-[#B8904D]">
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
             <p>{successMessage}</p>
           </div>
@@ -455,13 +455,13 @@ function SubmissionStatus({
   if (submission.status === "APPROVED") {
     return (
       <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-3">
-        <div className="flex items-center gap-2 text-sm font-semibold text-green-300">
+        <div className="flex items-center gap-2 text-sm font-semibold text-[#B8904D]">
           <CheckCircle2 className="h-4 w-4" />
           Dovadă aprobată
         </div>
 
         {submission.reviewed_at && (
-          <p className="mt-2 text-xs text-green-200/70">
+          <p className="mt-2 text-xs text-[#B8904D]">
             Verificată la {formatSubmissionDate(submission.reviewed_at)}
           </p>
         )}

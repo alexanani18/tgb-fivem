@@ -585,7 +585,7 @@ export default function NotificationsPage() {
           <header className="border-b border-white/10 p-6 md:p-8">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <p className="text-sm tracking-[0.2em] text-green-500 uppercase">
+                <p className="text-sm tracking-[0.2em] text-[#B8904D] uppercase">
                   Afacere
                 </p>
 
@@ -593,7 +593,7 @@ export default function NotificationsPage() {
                   <h1 className="text-3xl font-bold text-white">Notificări</h1>
 
                   {!isAdmin && unreadCount > 0 && (
-                    <span className="rounded-full border border-green-400/30 bg-green-500/15 px-3 py-1 text-xs font-semibold text-green-300">
+                    <span className="rounded-full border border-green-400/30 bg-green-500/15 px-3 py-1 text-xs font-semibold text-[#B8904D]">
                       {unreadCount} necitite
                     </span>
                   )}
@@ -651,7 +651,7 @@ export default function NotificationsPage() {
             )}
 
             {successMessage && (
-              <div className="mb-5 flex items-center gap-3 rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-200">
+              <div className="mb-5 flex items-center gap-3 rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-sm text-[#B8904D]">
                 <Check className="h-5 w-5 shrink-0" />
                 <p>{successMessage}</p>
               </div>
@@ -659,7 +659,7 @@ export default function NotificationsPage() {
 
             {isLoading ? (
               <div className="flex min-h-[350px] items-center justify-center">
-                <RefreshCw className="h-10 w-10 animate-spin text-green-500" />
+                <RefreshCw className="h-10 w-10 animate-spin text-[#B8904D]" />
               </div>
             ) : isAdmin ? (
               <AdminNotifications
@@ -750,7 +750,7 @@ function AdminNotifications({
     <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
       <section className="h-fit rounded-2xl border border-white/10 bg-white/[0.04] p-5">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-500/15 text-green-400">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-500/15 text-[#B8904D]">
             <Send className="h-5 w-5" />
           </div>
 
@@ -847,7 +847,7 @@ function AdminNotifications({
 
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <Images className="h-4 w-4 text-green-400" />
+                <Images className="h-4 w-4 text-[#B8904D]" />
 
                 <p className="text-sm font-medium text-white">
                   Trimite și 4 imagini
@@ -1079,7 +1079,7 @@ function EmployeeNotificationCard({
           className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${
             isRead
               ? "bg-white/5 text-zinc-400"
-              : "bg-green-500/15 text-green-400"
+              : "bg-green-500/15 text-[#B8904D]"
           }`}
         >
           {isRead ? (
@@ -1194,7 +1194,7 @@ function EmployeeNotificationImages({
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="inline-flex items-center gap-2 text-sm font-medium text-white">
-            <Images className="h-4 w-4 text-green-400" />
+            <Images className="h-4 w-4 text-[#B8904D]" />
             Imagini de verificat
           </p>
 

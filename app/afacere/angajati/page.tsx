@@ -142,7 +142,7 @@ export default function EmployeesPage() {
         <div className="rounded-2xl border border-white/10 bg-black/30 p-8 backdrop-blur-md">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <p className="text-sm tracking-[0.2em] text-green-500 uppercase">
+              <p className="text-sm tracking-[0.2em] text-[#B8904D] uppercase">
                 Afacere
               </p>
 
@@ -223,7 +223,7 @@ export default function EmployeesPage() {
                 <div className="flex items-center gap-3 text-zinc-300">
                   <LoaderCircle
                     size={22}
-                    className="animate-spin text-green-500"
+                    className="animate-spin text-[#B8904D]"
                   />
                   Se încarcă utilizatorii...
                 </div>
@@ -410,7 +410,7 @@ function StatisticCard({ label, value, icon: Icon }: StatisticCardProps) {
           <p className="mt-2 text-3xl font-bold text-white">{value}</p>
         </div>
 
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-500/10 text-green-400">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-500/10 text-[#B8904D]">
           <Icon size={21} />
         </div>
       </div>

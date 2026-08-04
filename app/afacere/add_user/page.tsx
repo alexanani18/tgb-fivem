@@ -85,7 +85,7 @@ export default function AddUserPage() {
     <AppShell backgroundImage="/img/business-image.png">
       <div className="p-8">
         <div className="rounded-2xl border border-white/10 bg-black/30 p-8 backdrop-blur-md">
-          <p className="text-sm tracking-[0.2em] text-green-500 uppercase">
+          <p className="text-sm tracking-[0.2em] text-[#B8904D] uppercase">
             Control Panel
           </p>
 
@@ -149,7 +149,7 @@ export default function AddUserPage() {
                 {successMessage && (
                   <div
                     role="status"
-                    className="flex items-center gap-2 rounded-xl border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-300"
+                    className="flex items-center gap-2 rounded-xl border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-[#B8904D]"
                   >
                     <CheckCircle2 size={18} className="shrink-0" />
 
@@ -215,7 +215,7 @@ interface RoleCardProps {
 function RoleCard({ title, description }: RoleCardProps) {
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-      <p className="text-sm font-semibold text-green-400">{title}</p>
+      <p className="text-sm font-semibold text-[#B8904D]">{title}</p>
 
       <p className="mt-2 text-xs leading-5 text-zinc-400">{description}</p>
     </div>

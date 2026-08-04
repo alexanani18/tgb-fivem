@@ -67,7 +67,7 @@ export default function AppShell({ children, backgroundImage }: AppShellProps) {
         <div className="absolute inset-0 bg-black/80" />
 
         <div className="relative flex flex-col items-center gap-5">
-          <RefreshCw className="h-10 w-10 animate-spin text-green-500" />
+          <RefreshCw className="h-10 w-10 animate-spin text-[#B8904D]" />
 
           <p className="text-sm tracking-[0.2em] text-zinc-300 uppercase">
             Se verifică sesiunea

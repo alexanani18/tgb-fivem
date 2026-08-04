@@ -5,7 +5,7 @@ export default function DashboardPage() {
     <AppShell backgroundImage="/img/business-image.png">
       <div className="p-8">
         <div className="rounded-2xl border border-white/10 bg-black/30 p-8 backdrop-blur-md">
-          <p className="text-sm tracking-[0.2em] text-green-500 uppercase">
+          <p className="text-sm tracking-[0.2em] text-[#B8904D] uppercase">
             Afacere
           </p>
 

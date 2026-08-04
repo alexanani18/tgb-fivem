@@ -408,7 +408,7 @@ export default function DashboardSidebar({
               >
                 <div className="flex items-center gap-3">
                   <SectionIcon
-                    className="h-5 w-5 text-green-400"
+                    className="h-5 w-5 text-[#B8904D]"
                     strokeWidth={1.8}
                   />
 
@@ -449,7 +449,7 @@ export default function DashboardSidebar({
                         href={item.href}
                         className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${
                           isActive
-                            ? "bg-white/10 text-green-400"
+                            ? "bg-white/10 text-[#B8904D]"
                             : "text-zinc-300 hover:bg-white/5 hover:text-white"
                         }`}
                       >
@@ -502,7 +502,7 @@ export default function DashboardSidebar({
 
         <p className="truncate px-3 text-sm text-zinc-300">{username}</p>
 
-        <p className="mt-1 px-3 text-xs tracking-wider text-green-500 uppercase">
+        <p className="mt-1 px-3 text-xs tracking-wider text-[#B8904D] uppercase">
           {role}
         </p>
       </div>

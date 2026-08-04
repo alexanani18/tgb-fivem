@@ -271,7 +271,7 @@ export default function AdminSubmissionReview() {
       )}
 
       {successMessage && (
-        <div className="flex items-start gap-2 rounded-xl border border-green-500/30 bg-green-500/10 p-3 text-sm text-green-200">
+        <div className="flex items-start gap-2 rounded-xl border border-green-500/30 bg-green-500/10 p-3 text-sm text-[#B8904D]">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
           <p>{successMessage}</p>
         </div>
@@ -279,7 +279,7 @@ export default function AdminSubmissionReview() {
 
       {submissions.length === 0 ? (
         <div className="rounded-2xl border border-white/10 bg-black/40 p-10 text-center">
-          <CheckCircle2 className="mx-auto h-10 w-10 text-green-400" />
+          <CheckCircle2 className="mx-auto h-10 w-10 text-[#B8904D]" />
 
           <h3 className="mt-4 text-lg font-semibold text-white">
             Nu există dovezi în așteptare

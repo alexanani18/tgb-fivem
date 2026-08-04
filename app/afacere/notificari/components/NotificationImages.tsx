@@ -26,7 +26,7 @@ export default function NotificationImages({
     <div className="mt-6">
       <div className="mb-3 flex items-center justify-between">
         <p className="inline-flex items-center gap-2 text-sm font-medium text-white">
-          <Images className="h-4 w-4 text-green-400" />
+          <Images className="h-4 w-4 text-[#B8904D]" />
           Imagini atașate
         </p>
 
