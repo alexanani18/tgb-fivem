@@ -82,7 +82,7 @@ const sidebarSections: SidebarSection[] = [
       },
       {
         label: "Adaugă utilizator",
-        href: "/afacere/add-user",
+        href: "/afacere/add_user",
         icon: UserPlus,
       },
     ],
@@ -261,7 +261,7 @@ export default function DashboardSidebar({
   }
 
   return (
-    <aside className="hidden min-h-screen w-[235px] shrink-0 border-r border-white/10 bg-black/35 px-5 py-6 backdrop-blur-md md:flex md:flex-col">
+    <aside className="hidden min-h-screen w-[235px] shrink-0 border-r border-white/10 bg-black/35 py-6 backdrop-blur-md md:flex md:flex-col">
       <nav className="space-y-3">
         {visibleSections.map((section) => {
           const SectionIcon = section.icon;
