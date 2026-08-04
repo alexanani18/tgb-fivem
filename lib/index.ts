@@ -4,6 +4,7 @@ import express from "express";
 import cors from "cors";
 import session from "express-session";
 import path from "node:path";
+import multer from "multer";
 
 import { db } from "./db";
 import authRoutes from "./routes/auth";
@@ -33,6 +34,11 @@ app.use(
   express.static(
     path.join(process.cwd(), "public", "notification-submissions"),
   ),
+);
+
+app.use(
+  "/contract-images",
+  express.static(path.join(process.cwd(), "public", "contract-images")),
 );
 
 app.use(
@@ -69,6 +75,44 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/notification-submissions", notificationSubmissionRoutes);
 app.use("/users", userRoutes);
 app.use("/contracts", contractRoutes);
+
+/*
+|--------------------------------------------------------------------------
+| Eventual Error Handling Middleware
+|--------------------------------------------------------------------------
+*/
+
+app.use(
+  (
+    error: unknown,
+    _req: express.Request,
+    res: express.Response,
+    next: express.NextFunction,
+  ) => {
+    if (error instanceof multer.MulterError) {
+      if (error.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({
+          success: false,
+          message: "Poza buletinului poate avea maximum 5 MB.",
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: "Fișierul încărcat nu este valid.",
+      });
+    }
+
+    if (error instanceof Error) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return next(error);
+  },
+);
 
 /*
 |--------------------------------------------------------------------------
