@@ -41,8 +41,26 @@ const uniformImageStorage = multer.diskStorage({
     const extension = path.extname(file.originalname).toLowerCase();
 
     const uniformId = req.params.id;
+    const timestamp = Date.now();
 
-    callback(null, `uniform-${uniformId}${extension}`);
+    const directory = path.join(
+      process.cwd(),
+      "public",
+      "uniforms",
+    );
+
+    const files = fs.readdirSync(directory);
+
+    for (const fileName of files) {
+      if (fileName.startsWith(`uniform-${uniformId}-`)) {
+        fs.unlinkSync(path.join(directory, fileName));
+      }
+    }
+
+    callback(
+      null,
+      `uniform-${uniformId}-${timestamp}${extension}`,
+    );
   },
 });
 
