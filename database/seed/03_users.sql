@@ -13,7 +13,7 @@ VALUES
 (
     1,
     'admin',
-    '$2b$12$OEUJFdnsJS.rDw.j0h9ej.HDxfbyAqV28ZOi1cjXq/kLFSm.jQ9RW',
+    '$2b$12$yskiE6hSCgxCU7dQvMFJse5wodP5vUHcSWpHqOlI0mjEEP4vjwUEe',
     'ADMIN',
     4,
     1,
