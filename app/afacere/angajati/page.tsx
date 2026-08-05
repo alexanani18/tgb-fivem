@@ -1,38 +1,65 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import {
   AlertCircle,
   LoaderCircle,
   RefreshCw,
-  ShieldCheck,
-  UserRound,
-  Users,
   Search,
+  Users,
 } from "lucide-react";
 
 import AppShell from "../../components/AppShell";
 
-type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA";
+type EmployeeStatus = "ACTIV" | "CONCEDIU" | "DEMISIONAT";
 
-interface User {
+type BooleanEmployeeField = "meetingAttendance" | "hasUniform" | "hasCar";
+
+interface Employee {
   id: number;
-  username: string;
-  role: UserRole;
-  isActive: boolean;
+
+  firstName: string;
+  lastName: string;
+
+  iban: string | number;
+
+  status: EmployeeStatus;
+
+  phoneNumber: string;
+  ciSeries: string;
+  cityHours: string | number;
+
+  rank: string;
+
+  meetingAttendance: boolean;
+
   createdAt: string;
-  updatedAt: string;
+
+  observations: string;
+
+  discordId: string;
+
+  hasUniform: boolean;
+  hasCar: boolean;
 }
 
-interface UsersResponse {
+interface EmployeesResponse {
   success: boolean;
   message?: string;
-  users?: User[];
+  users?: Employee[];
 }
 
-const USERS_PER_PAGE = 20;
+interface UpdateEmployeeDetailsResponse {
+  success: boolean;
+  message?: string;
+}
 
-function formatDate(dateValue: string) {
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
+
+const EMPLOYEES_PER_PAGE = 20;
+
+function formatDate(dateValue: string): string {
   const date = new Date(dateValue);
 
   if (Number.isNaN(date.getTime())) {
@@ -43,44 +70,76 @@ function formatDate(dateValue: string) {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
   }).format(date);
 }
 
+function formatStatus(status: EmployeeStatus): string {
+  if (status === "CONCEDIU") {
+    return "Concediu";
+  }
+
+  if (status === "DEMISIONAT") {
+    return "Demisionat";
+  }
+
+  return "Activ";
+}
+
+function getUpdateKey(employeeId: number, field: BooleanEmployeeField): string {
+  return `${employeeId}-${field}`;
+}
+
 export default function EmployeesPage() {
-  const [users, setUsers] = useState<User[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState("");
 
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
   const [errorMessage, setErrorMessage] = useState("");
+  const [updateErrorMessage, setUpdateErrorMessage] = useState("");
+
+  const [updatingFields, setUpdatingFields] = useState<Set<string>>(new Set());
 
   const normalizedSearchTerm = searchTerm.trim().toLowerCase();
 
-  const filteredUsers = users.filter((user) => {
+  const filteredEmployees = employees.filter((employee) => {
     if (!normalizedSearchTerm) {
       return true;
     }
 
+    const fullName = `${employee.firstName} ${employee.lastName}`.toLowerCase();
+
     return (
-      user.username.toLowerCase().includes(normalizedSearchTerm) ||
-      user.role.toLowerCase().includes(normalizedSearchTerm)
+      fullName.includes(normalizedSearchTerm) ||
+      String(employee.iban).toLowerCase().includes(normalizedSearchTerm) ||
+      employee.status.toLowerCase().includes(normalizedSearchTerm) ||
+      employee.phoneNumber.toLowerCase().includes(normalizedSearchTerm) ||
+      employee.ciSeries.toLowerCase().includes(normalizedSearchTerm) ||
+      String(employee.cityHours).toLowerCase().includes(normalizedSearchTerm) ||
+      employee.rank.toLowerCase().includes(normalizedSearchTerm) ||
+      employee.observations.toLowerCase().includes(normalizedSearchTerm) ||
+      employee.discordId.toLowerCase().includes(normalizedSearchTerm)
     );
   });
 
   const totalPages = Math.max(
     1,
-    Math.ceil(filteredUsers.length / USERS_PER_PAGE),
+    Math.ceil(filteredEmployees.length / EMPLOYEES_PER_PAGE),
   );
 
-  const firstUserIndex = (currentPage - 1) * USERS_PER_PAGE;
-  const lastUserIndex = firstUserIndex + USERS_PER_PAGE;
+  const firstEmployeeIndex = (currentPage - 1) * EMPLOYEES_PER_PAGE;
 
-  const paginatedUsers = filteredUsers.slice(firstUserIndex, lastUserIndex);
+  const lastEmployeeIndex = firstEmployeeIndex + EMPLOYEES_PER_PAGE;
 
-  const loadUsers = useCallback(async (refresh = false) => {
+  const paginatedEmployees = filteredEmployees.slice(
+    firstEmployeeIndex,
+    lastEmployeeIndex,
+  );
+
+  const loadEmployees = useCallback(async (refresh = false) => {
     try {
       if (refresh) {
         setIsRefreshing(true);
@@ -89,37 +148,135 @@ export default function EmployeesPage() {
       }
 
       setErrorMessage("");
+      setUpdateErrorMessage("");
 
-      const response = await fetch("http://localhost:5000/users", {
+      const response = await fetch(`${API_URL}/users`, {
         method: "GET",
         credentials: "include",
         cache: "no-store",
       });
 
-      const data = (await response.json()) as UsersResponse;
+      const data = (await response.json()) as EmployeesResponse;
 
       if (!response.ok) {
-        setUsers([]);
+        setEmployees([]);
         setCurrentPage(1);
-        setErrorMessage(
-          data.message || "Utilizatorii nu au putut fi încărcați.",
-        );
+
+        setErrorMessage(data.message || "Angajații nu au putut fi încărcați.");
+
         return;
       }
 
-      setUsers(data.users ?? []);
+      setEmployees(data.users ?? []);
       setCurrentPage(1);
     } catch (error) {
-      console.error("Load users request error:", error);
+      console.error("Load employees request error:", error);
 
-      setUsers([]);
+      setEmployees([]);
       setCurrentPage(1);
+
       setErrorMessage("Nu s-a putut realiza conexiunea cu serverul.");
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
   }, []);
+
+  async function updateBooleanField(
+    employeeId: number,
+    field: BooleanEmployeeField,
+    newValue: boolean,
+  ) {
+    const updateKey = getUpdateKey(employeeId, field);
+
+    if (updatingFields.has(updateKey)) {
+      return;
+    }
+
+    const previousEmployee = employees.find(
+      (employee) => employee.id === employeeId,
+    );
+
+    if (!previousEmployee) {
+      return;
+    }
+
+    setUpdateErrorMessage("");
+
+    setUpdatingFields((currentFields) => {
+      const nextFields = new Set(currentFields);
+
+      nextFields.add(updateKey);
+
+      return nextFields;
+    });
+
+    setEmployees((currentEmployees) =>
+      currentEmployees.map((employee) =>
+        employee.id === employeeId
+          ? {
+              ...employee,
+              [field]: newValue,
+            }
+          : employee,
+      ),
+    );
+
+    try {
+      const response = await fetch(`${API_URL}/users/${employeeId}/details`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          [field]: newValue,
+        }),
+      });
+
+      const data = (await response.json()) as UpdateEmployeeDetailsResponse;
+
+      if (!response.ok) {
+        setEmployees((currentEmployees) =>
+          currentEmployees.map((employee) =>
+            employee.id === employeeId
+              ? {
+                  ...employee,
+                  [field]: previousEmployee[field],
+                }
+              : employee,
+          ),
+        );
+
+        setUpdateErrorMessage(
+          data.message || "Modificarea nu a putut fi salvată.",
+        );
+      }
+    } catch (error) {
+      console.error("Update employee field error:", error);
+
+      setEmployees((currentEmployees) =>
+        currentEmployees.map((employee) =>
+          employee.id === employeeId
+            ? {
+                ...employee,
+                [field]: previousEmployee[field],
+              }
+            : employee,
+        ),
+      );
+
+      setUpdateErrorMessage("Nu s-a putut realiza conexiunea cu serverul.");
+    } finally {
+      setUpdatingFields((currentFields) => {
+        const nextFields = new Set(currentFields);
+
+        nextFields.delete(updateKey);
+
+        return nextFields;
+      });
+    }
+  }
 
   function handleSearchChange(value: string) {
     setSearchTerm(value);
@@ -128,13 +285,13 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      void loadUsers();
+      void loadEmployees();
     }, 0);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [loadUsers]);
+  }, [loadEmployees]);
 
   return (
     <AppShell backgroundImage="/img/business-image.png">
@@ -149,13 +306,13 @@ export default function EmployeesPage() {
               <h1 className="mt-3 text-3xl font-bold text-white">Angajați</h1>
 
               <p className="mt-4 max-w-2xl text-zinc-300">
-                Lista tuturor utilizatorilor înregistrați în aplicație.
+                Lista angajaților din The Blackfold Skatehouse.
               </p>
             </div>
 
             <button
               type="button"
-              onClick={() => void loadUsers(true)}
+              onClick={() => void loadEmployees(true)}
               disabled={isLoading || isRefreshing}
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/10 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
             >
@@ -168,33 +325,38 @@ export default function EmployeesPage() {
           </div>
 
           <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatisticCard label="Total angajați" value={employees.length} />
+
             <StatisticCard
-              label="Total utilizatori"
-              value={filteredUsers.length}
-              icon={Users}
+              label="Manageri"
+              value={
+                employees.filter(
+                  (employee) => employee.rank === "Blackfold Manager",
+                ).length
+              }
             />
 
             <StatisticCard
-              label="Angajați"
-              value={users.filter((user) => user.role === "ANGAJAT").length}
-              icon={UserRound}
+              label="Specialiști"
+              value={
+                employees.filter(
+                  (employee) => employee.rank === "Blackfold Specialist",
+                ).length
+              }
             />
 
             <StatisticCard
-              label="Mafia"
-              value={users.filter((user) => user.role === "MAFIA").length}
-              icon={Users}
-            />
-
-            <StatisticCard
-              label="Administratori"
-              value={users.filter((user) => user.role === "ADMIN").length}
-              icon={ShieldCheck}
+              label="Crew"
+              value={
+                employees.filter(
+                  (employee) => employee.rank === "Blackfold Crew",
+                ).length
+              }
             />
           </div>
 
           <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="relative w-full max-w-md">
+            <div className="relative w-full max-w-xl">
               <Search
                 size={18}
                 className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-zinc-500"
@@ -204,18 +366,26 @@ export default function EmployeesPage() {
                 type="search"
                 value={searchTerm}
                 onChange={(event) => handleSearchChange(event.target.value)}
-                placeholder="Caută după username sau rol..."
-                className="w-full rounded-xl border border-white/10 bg-black/40 py-3 pr-4 pl-11 text-sm text-white outline-none transition placeholder:text-zinc-500 hover:border-white/20 focus:border-green-500/50"
+                placeholder="Caută după nume, IBAN, telefon, grad sau Discord..."
+                className="w-full rounded-xl border border-white/10 bg-black/40 py-3 pr-4 pl-11 text-sm text-white outline-none transition placeholder:text-zinc-500 hover:border-white/20 focus:border-[#B8904D]/60"
               />
             </div>
 
             <p className="text-sm text-zinc-400">
-              {filteredUsers.length}{" "}
-              {filteredUsers.length === 1
-                ? "utilizator găsit"
-                : "utilizatori găsiți"}
+              {filteredEmployees.length}{" "}
+              {filteredEmployees.length === 1
+                ? "angajat găsit"
+                : "angajați găsiți"}
             </p>
           </div>
+
+          {updateErrorMessage ? (
+            <div className="mt-5 flex items-center gap-3 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+              <AlertCircle size={18} />
+
+              {updateErrorMessage}
+            </div>
+          ) : null}
 
           <div className="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
             {isLoading ? (
@@ -225,7 +395,7 @@ export default function EmployeesPage() {
                     size={22}
                     className="animate-spin text-[#B8904D]"
                   />
-                  Se încarcă utilizatorii...
+                  Se încarcă angajații...
                 </div>
               </div>
             ) : errorMessage ? (
@@ -233,99 +403,162 @@ export default function EmployeesPage() {
                 <AlertCircle size={32} className="text-red-400" />
 
                 <p className="mt-4 font-medium text-white">
-                  Utilizatorii nu au putut fi încărcați
+                  Angajații nu au putut fi încărcați
                 </p>
 
                 <p className="mt-2 text-sm text-zinc-400">{errorMessage}</p>
 
                 <button
                   type="button"
-                  onClick={() => void loadUsers()}
+                  onClick={() => void loadEmployees()}
                   className="mt-5 rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-green-500"
                 >
                   Încearcă din nou
                 </button>
               </div>
-            ) : filteredUsers.length === 0 ? (
-              <div className="flex min-h-64 flex-col items-center justify-center text-center">
+            ) : filteredEmployees.length === 0 ? (
+              <div className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
                 <Users size={34} className="text-zinc-500" />
 
                 <p className="mt-4 font-medium text-white">
-                  {searchTerm ? "Nu există rezultate" : "Nu există utilizatori"}
+                  {searchTerm ? "Nu există rezultate" : "Nu există angajați"}
                 </p>
 
                 <p className="mt-2 text-sm text-zinc-400">
                   {searchTerm
-                    ? "Niciun utilizator nu corespunde căutării."
-                    : "Momentan nu există utilizatori înregistrați."}
+                    ? "Niciun angajat nu corespunde căutării."
+                    : "Momentan nu există angajați disponibili."}
                 </p>
               </div>
             ) : (
               <>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[900px] border-collapse">
+                  <table className="w-full min-w-[1900px] border-collapse">
                     <thead>
-                      <tr className="border-b border-white/10 bg-white/5 text-left">
-                        <th className="px-5 py-4 text-xs font-semibold tracking-wider text-zinc-400 uppercase">
-                          Username
-                        </th>
+                      <tr className="border-b border-white/10 bg-white/5">
+                        <TableHeader>Nume Prenume</TableHeader>
+                        <TableHeader>IBAN</TableHeader>
+                        <TableHeader>Status</TableHeader>
+                        <TableHeader>Nr. Telefon</TableHeader>
+                        <TableHeader>Serie CI</TableHeader>
+                        <TableHeader>Luni</TableHeader>
+                        <TableHeader>Grad</TableHeader>
 
-                        <th className="px-5 py-4 text-xs font-semibold tracking-wider text-zinc-400 uppercase">
-                          Rol
-                        </th>
+                        <TableHeader centered>Prezență Ședință</TableHeader>
+                        <TableHeader centered>Uniformă</TableHeader>
+                        <TableHeader centered>Mașină</TableHeader>
 
-                        <th className="px-5 py-4 text-xs font-semibold tracking-wider text-zinc-400 uppercase">
-                          Status
-                        </th>
-
-                        <th className="px-5 py-4 text-xs font-semibold tracking-wider text-zinc-400 uppercase">
-                          Creat la
-                        </th>
-
-                        <th className="px-5 py-4 text-xs font-semibold tracking-wider text-zinc-400 uppercase">
-                          Actualizat la
-                        </th>
-
-                        <th className="px-5 py-4 text-right text-xs font-semibold tracking-wider text-zinc-400 uppercase">
-                          Acțiuni
-                        </th>
+                        <TableHeader>Data angajării</TableHeader>
+                        <TableHeader>Obs</TableHeader>
+                        <TableHeader>ID Discord</TableHeader>
                       </tr>
                     </thead>
 
                     <tbody>
-                      {paginatedUsers.map((user) => (
+                      {paginatedEmployees.map((employee) => (
                         <tr
-                          key={user.id}
+                          key={employee.id}
                           className="border-b border-white/5 transition last:border-b-0 hover:bg-white/5"
                         >
-                          <td className="px-5 py-4">
-                            <div className="flex items-center gap-3">
-                              <span className="font-medium text-white">
-                                {user.username}
-                              </span>
-                            </div>
+                          <td className="px-4 py-4">
+                            <Link
+                              href={`/afacere/angajati/${employee.id}`}
+                              className="font-medium whitespace-nowrap text-[#D8B979] transition hover:text-[#F0D49A] hover:underline"
+                            >
+                              {employee.firstName} {employee.lastName}
+                            </Link>
                           </td>
 
-                          <td className="px-5 py-4">
-                            <RoleBadge role={user.role} />
+                          <td className="px-4 py-4 text-sm whitespace-nowrap text-zinc-300">
+                            {employee.iban}
                           </td>
 
-                          <td className="px-5 py-4">
-                            <StatusBadge isActive={user.isActive} />
+                          <td className="px-4 py-4">
+                            <StatusBadge status={employee.status} />
                           </td>
 
-                          <td className="px-5 py-4 text-sm text-zinc-300">
-                            {formatDate(user.createdAt)}
+                          <td className="px-4 py-4 text-sm whitespace-nowrap text-zinc-300">
+                            {employee.phoneNumber || "—"}
                           </td>
 
-                          <td className="px-5 py-4 text-sm text-zinc-300">
-                            {formatDate(user.updatedAt)}
+                          <td className="px-4 py-4 text-sm whitespace-nowrap text-zinc-300">
+                            {employee.ciSeries || "—"}
                           </td>
 
-                          <td className="px-5 py-4 text-right">
-                            <div className="flex min-h-8 items-center justify-end">
-                              {/* Acțiunile vor fi adăugate aici */}
-                            </div>
+                          <td className="px-4 py-4 text-sm whitespace-nowrap text-zinc-300">
+                            {employee.cityHours || "—"}
+                          </td>
+
+                          <td className="px-4 py-4">
+                            <RankBadge rank={employee.rank} />
+                          </td>
+
+                          <td className="px-4 py-4 text-center">
+                            <EmployeeCheckbox
+                              checked={employee.meetingAttendance}
+                              disabled={updatingFields.has(
+                                getUpdateKey(employee.id, "meetingAttendance"),
+                              )}
+                              label={`Prezență ședință pentru ${employee.firstName} ${employee.lastName}`}
+                              onChange={(checked) =>
+                                void updateBooleanField(
+                                  employee.id,
+                                  "meetingAttendance",
+                                  checked,
+                                )
+                              }
+                            />
+                          </td>
+
+                          <td className="px-4 py-4 text-center">
+                            <EmployeeCheckbox
+                              checked={employee.hasUniform}
+                              disabled={updatingFields.has(
+                                getUpdateKey(employee.id, "hasUniform"),
+                              )}
+                              label={`Uniformă pentru ${employee.firstName} ${employee.lastName}`}
+                              onChange={(checked) =>
+                                void updateBooleanField(
+                                  employee.id,
+                                  "hasUniform",
+                                  checked,
+                                )
+                              }
+                            />
+                          </td>
+
+                          <td className="px-4 py-4 text-center">
+                            <EmployeeCheckbox
+                              checked={employee.hasCar}
+                              disabled={updatingFields.has(
+                                getUpdateKey(employee.id, "hasCar"),
+                              )}
+                              label={`Mașină pentru ${employee.firstName} ${employee.lastName}`}
+                              onChange={(checked) =>
+                                void updateBooleanField(
+                                  employee.id,
+                                  "hasCar",
+                                  checked,
+                                )
+                              }
+                            />
+                          </td>
+
+                          <td className="px-4 py-4 text-sm whitespace-nowrap text-zinc-300">
+                            {formatDate(employee.createdAt)}
+                          </td>
+
+                          <td
+                            className="max-w-[260px] px-4 py-4 text-sm text-zinc-300"
+                            title={employee.observations || undefined}
+                          >
+                            <span className="block truncate">
+                              {employee.observations || "—"}
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-4 text-sm whitespace-nowrap text-zinc-300">
+                            {employee.discordId || "—"}
                           </td>
                         </tr>
                       ))}
@@ -337,17 +570,17 @@ export default function EmployeesPage() {
                   <p className="text-sm text-zinc-400">
                     Se afișează{" "}
                     <span className="font-medium text-white">
-                      {firstUserIndex + 1}
+                      {firstEmployeeIndex + 1}
                     </span>
                     {" - "}
                     <span className="font-medium text-white">
-                      {Math.min(lastUserIndex, users.length)}
+                      {Math.min(lastEmployeeIndex, filteredEmployees.length)}
                     </span>
                     {" din "}
                     <span className="font-medium text-white">
-                      {users.length}
+                      {filteredEmployees.length}
                     </span>
-                    {" utilizatori"}
+                    {" angajați"}
                   </p>
 
                   <div className="flex items-center gap-2">
@@ -397,10 +630,9 @@ export default function EmployeesPage() {
 interface StatisticCardProps {
   label: string;
   value: number;
-  icon: typeof Users;
 }
 
-function StatisticCard({ label, value, icon: Icon }: StatisticCardProps) {
+function StatisticCard({ label, value }: StatisticCardProps) {
   return (
     <div className="rounded-2xl border border-white/10 bg-black/30 p-5">
       <div className="flex items-center justify-between">
@@ -410,56 +642,92 @@ function StatisticCard({ label, value, icon: Icon }: StatisticCardProps) {
           <p className="mt-2 text-3xl font-bold text-white">{value}</p>
         </div>
 
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-500/10 text-[#B8904D]">
-          <Icon size={21} />
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#B8904D]/10 text-[#B8904D]">
+          <Users size={21} />
         </div>
       </div>
     </div>
   );
 }
 
-interface RoleBadgeProps {
-  role: UserRole;
+interface TableHeaderProps {
+  children: React.ReactNode;
+  centered?: boolean;
 }
 
-function RoleBadge({ role }: RoleBadgeProps) {
-  const roleClasses: Record<UserRole, string> = {
-    ANGAJAT: "border-blue-500/20 bg-blue-500/10 text-blue-300",
-    MAFIA: "border-red-500/20 bg-red-500/10 text-red-300",
-    ADMIN: "border-purple-500/20 bg-purple-500/10 text-purple-300",
-  };
-
+function TableHeader({ children, centered = false }: TableHeaderProps) {
   return (
-    <span
-      className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${roleClasses[role]}`}
+    <th
+      className={`px-4 py-4 text-xs font-semibold tracking-wider whitespace-nowrap text-zinc-400 uppercase ${
+        centered ? "text-center" : "text-left"
+      }`}
     >
-      {role}
-    </span>
+      {children}
+    </th>
   );
 }
 
 interface StatusBadgeProps {
-  isActive: boolean;
+  status: EmployeeStatus;
 }
 
-function StatusBadge({ isActive }: StatusBadgeProps) {
+function StatusBadge({ status }: StatusBadgeProps) {
+  const statusClasses: Record<EmployeeStatus, string> = {
+    ACTIV: "border-green-500/20 bg-green-500/10 text-green-300",
+
+    CONCEDIU: "border-blue-500/20 bg-blue-500/10 text-blue-300",
+
+    DEMISIONAT: "border-red-500/20 bg-red-500/10 text-red-300",
+  };
+
   return (
     <span
-      className={
-        isActive
-          ? "inline-flex items-center gap-2 rounded-full border border-green-500/20 bg-green-500/10 px-3 py-1 text-xs font-medium text-green-300"
-          : "inline-flex items-center gap-2 rounded-full border border-red-500/20 bg-red-500/10 px-3 py-1 text-xs font-medium text-red-300"
-      }
+      className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold whitespace-nowrap ${statusClasses[status]}`}
     >
-      <span
-        className={
-          isActive
-            ? "h-1.5 w-1.5 rounded-full bg-green-400"
-            : "h-1.5 w-1.5 rounded-full bg-red-400"
-        }
+      {formatStatus(status)}
+    </span>
+  );
+}
+
+interface RankBadgeProps {
+  rank: string;
+}
+
+function RankBadge({ rank }: RankBadgeProps) {
+  return (
+    <span className="inline-flex rounded-full border border-[#B8904D]/25 bg-[#B8904D]/10 px-3 py-1 text-xs font-semibold whitespace-nowrap text-[#D8B979]">
+      {rank}
+    </span>
+  );
+}
+
+interface EmployeeCheckboxProps {
+  checked: boolean;
+  disabled: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}
+
+function EmployeeCheckbox({
+  checked,
+  disabled,
+  label,
+  onChange,
+}: EmployeeCheckboxProps) {
+  return (
+    <label className="inline-flex cursor-pointer items-center justify-center">
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        aria-label={label}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-5 w-5 cursor-pointer rounded border-white/20 bg-black/50 accent-[#B8904D] disabled:cursor-wait disabled:opacity-50"
       />
 
-      {isActive ? "Activ" : "Inactiv"}
-    </span>
+      {disabled ? (
+        <LoaderCircle size={15} className="ml-2 animate-spin text-[#B8904D]" />
+      ) : null}
+    </label>
   );
 }
