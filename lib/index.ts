@@ -17,8 +17,6 @@ import uniformRoutes from "./routes/uniforms";
 
 const app = express();
 
-const PORT = Number(process.env.API_PORT ?? 5000);
-
 const SESSION_SECRET = process.env.SESSION_SECRET;
 
 if (!SESSION_SECRET) {
@@ -44,9 +42,7 @@ app.use(
 
 app.use(
   "/uniforms",
-  express.static(
-    path.join(process.cwd(), "public", "uniforms"),
-  ),
+  express.static(path.join(process.cwd(), "public", "uniforms")),
 );
 
 app.use(
@@ -139,8 +135,10 @@ async function startServer() {
 
     console.log("✅ Database connected successfully.");
 
-    app.listen(PORT, () => {
-      console.log(`🚀 Express API running on http://localhost:${PORT}`);
+    app.listen(() => {
+      console.log(
+        `🚀 Express API running on ${process.env.NEXT_PUBLIC_API_URL}`,
+      );
 
       void cleanupExpiredNotifications();
 
