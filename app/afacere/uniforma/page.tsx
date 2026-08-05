@@ -46,8 +46,6 @@ export default function UniformPage() {
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
 
   const loadUniforms = useCallback(async () => {
-
-
     setIsLoading(true);
     setErrorMessage(null);
 
@@ -72,16 +70,10 @@ export default function UniformPage() {
         cache: "no-store",
       });
 
-
-
       const data = (await response.json()) as UniformsResponse;
 
-
-
       if (!response.ok || !data.success) {
-        throw new Error(
-          data.message ?? "Uniformele nu au putut fi încărcate.",
-        );
+        throw new Error(data.message ?? "Uniformele nu au putut fi încărcate.");
       }
 
       setUniforms(data.uniforms ?? []);
@@ -99,14 +91,17 @@ export default function UniformPage() {
   }, []);
 
   useEffect(() => {
-    void loadUniforms();
+    const timeout = setTimeout(() => {
+      void loadUniforms();
+    }, 0);
+
+    return () => clearTimeout(timeout);
   }, [loadUniforms]);
 
   return (
     <AppShell backgroundImage="/img/business-image.png">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-10 p-8">
-        <header className="space-y-4">
-        </header>
+        <header className="space-y-4"></header>
 
         {isLoading && (
           <div className="rounded-2xl border border-[#B8904D]/20 bg-black/40 p-10 text-center">
@@ -130,9 +125,7 @@ export default function UniformPage() {
                 onUpdated={(updatedUniform) => {
                   setUniforms((current) =>
                     current.map((item) =>
-                      item.id === updatedUniform.id
-                        ? updatedUniform
-                        : item,
+                      item.id === updatedUniform.id ? updatedUniform : item,
                     ),
                   );
                 }}
