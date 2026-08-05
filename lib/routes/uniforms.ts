@@ -1,13 +1,17 @@
-import { Router } from "express";
-import type { RowDataPacket } from "mysql2";
-
-import { db } from "../db";
-import { requireEmployee } from "../services/requireEmployee";
-import { requireAdmin } from "../services/requireAdmin";
 import fs from "node:fs";
 import path from "node:path";
 
 import multer from "multer";
+import { Router } from "express";
+
+import {
+  getUniformById,
+  getUniforms,
+  updateUniform,
+  updateUniformImage,
+} from "../database/uniforms";
+import { requireEmployee } from "../services/requireEmployee";
+import { requireAdmin } from "../services/requireAdmin";
 
 const router = Router();
 
@@ -65,20 +69,6 @@ const uniformImageUpload = multer({
   },
 });
 
-interface UniformRow extends RowDataPacket {
-  id: number;
-  type: "MALE" | "FEMALE";
-  title: string;
-  image_path: string | null;
-  store_name: string;
-  shoes_rack: number;
-  pants_rack: number;
-  jacket_rack: number;
-  hat_rack: number;
-  updated_by: number | null;
-  updated_at: Date;
-}
-
 function parseRack(value: unknown): number | null {
   const rack = Number(value);
 
@@ -128,24 +118,7 @@ function validateStoreName(value: unknown): string | null {
 
 router.get("/", requireEmployee, async (_req, res) => {
   try {
-    const [uniforms] = await db.execute<UniformRow[]>(
-      `
-        SELECT
-          id,
-          type,
-          title,
-          image_path,
-          store_name,
-          shoes_rack,
-          pants_rack,
-          jacket_rack,
-          hat_rack,
-          updated_by,
-          updated_at
-        FROM uniforms
-        ORDER BY id ASC
-      `,
-    );
+    const uniforms = await getUniforms();
 
     return res.status(200).json({
       success: true,
@@ -214,87 +187,32 @@ router.patch("/:id", requireAdmin, async (req, res) => {
       });
     }
 
-    const [uniforms] = await db.execute<UniformRow[]>(
-      `
-        SELECT
-          id,
-          type,
-          title,
-          image_path,
-          store_name,
-          shoes_rack,
-          pants_rack,
-          jacket_rack,
-          hat_rack,
-          updated_by,
-          updated_at
-        FROM uniforms
-        WHERE id = ?
-        LIMIT 1
-      `,
-      [uniformId],
-    );
+    const uniform = await getUniformById(uniformId);
 
-    if (uniforms.length === 0) {
+    if (!uniform) {
       return res.status(404).json({
         success: false,
         message: "Uniforma nu există.",
       });
     }
 
-    await db.execute(
-      `
-    UPDATE uniforms
-    SET
-      title = ?,
-      store_name = ?,
-      shoes_rack = ?,
-      pants_rack = ?,
-      jacket_rack = ?,
-      hat_rack = ?,
-      updated_by = ?
-    WHERE id = ?
-  `,
-      [
-        title,
-        storeName,
-        shoesRack,
-        pantsRack,
-        jacketRack,
-        hatRack,
-        sessionUser.id,
-        uniformId,
-      ],
-    );
-
-    const [updatedUniforms] = await db.execute<UniformRow[]>(
-      `
-    SELECT
-      id,
-      type,
+    const updatedUniform = await updateUniform(uniformId, {
       title,
-      image_path,
-      store_name,
-      shoes_rack,
-      pants_rack,
-      jacket_rack,
-      hat_rack,
-      updated_by,
-      updated_at
-    FROM uniforms
-    WHERE id = ?
-    LIMIT 1
-  `,
-      [uniformId],
-    );
+      storeName,
+      shoesRack,
+      pantsRack,
+      jacketRack,
+      hatRack,
+      updatedBy: sessionUser.id,
+    });
 
     return res.status(200).json({
       success: true,
       message: "Uniforma a fost actualizată.",
-      uniform: updatedUniforms[0],
+      uniform: updatedUniform,
     });
   } catch (error) {
-    console.error("Failed to update uniform:", error);
+    console.error("❌ Failed to update uniform:", error);
 
     return res.status(500).json({
       success: false,
@@ -333,28 +251,9 @@ router.patch(
         });
       }
 
-      const [uniforms] = await db.execute<UniformRow[]>(
-        `
-          SELECT
-            id,
-            type,
-            title,
-            image_path,
-            store_name,
-            shoes_rack,
-            pants_rack,
-            jacket_rack,
-            hat_rack,
-            updated_by,
-            updated_at
-          FROM uniforms
-          WHERE id = ?
-          LIMIT 1
-        `,
-        [uniformId],
-      );
+      const uniform = await getUniformById(uniformId);
 
-      if (uniforms.length === 0) {
+      if (!uniform) {
         return res.status(404).json({
           success: false,
           message: "Uniforma nu există.",
@@ -363,49 +262,18 @@ router.patch(
 
       const imagePath = `uniforms/${req.file.filename}`;
 
-      await db.execute(
-        `
-    UPDATE uniforms
-    SET
-      image_path = ?,
-      updated_by = ?
-    WHERE id = ?
-  `,
-        [
-          imagePath,
-          sessionUser.id,
-          uniformId,
-        ],
-      );
-
-      const [updatedUniforms] = await db.execute<UniformRow[]>(
-        `
-    SELECT
-      id,
-      type,
-      title,
-      image_path,
-      store_name,
-      shoes_rack,
-      pants_rack,
-      jacket_rack,
-      hat_rack,
-      updated_by,
-      updated_at
-    FROM uniforms
-    WHERE id = ?
-    LIMIT 1
-  `,
-        [uniformId],
-      );
+      const updatedUniform = await updateUniformImage(uniformId, {
+        imagePath,
+        updatedBy: sessionUser.id,
+      });
 
       return res.status(200).json({
         success: true,
         message: "Imaginea uniformei a fost actualizată.",
-        uniform: updatedUniforms[0],
+        uniform: updatedUniform,
       });
     } catch (error) {
-      console.error("Failed to upload uniform image:", error);
+      console.error("❌ Failed to upload uniform image:", error);
 
       return res.status(500).json({
         success: false,
