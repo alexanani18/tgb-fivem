@@ -30,8 +30,6 @@ interface ContractData {
   acceptedRules: boolean;
   employeeSignatureName: string | null;
   status: ContractStatus;
-  rejectionReason: string | null;
-  contractCreationBlocked: boolean;
   signedAt: string | null;
   approvedByUserId: number | null;
   approvedByName: string | null;
@@ -48,7 +46,8 @@ interface ContractsResponse {
   message?: string;
 }
 
-const API_URL = "http://localhost:5000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const CONTRACTS_PER_PAGE = 20;
 
 function formatDate(dateValue: string | null): string {
   if (!dateValue) {
@@ -107,7 +106,53 @@ export default function AdminContractsPage() {
   const [searchValue, setSearchValue] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+
   const router = useRouter();
+
+  const filteredContracts = useMemo(() => {
+    const normalizedSearchValue = searchValue.trim().toLowerCase();
+
+    if (!normalizedSearchValue) {
+      return contracts;
+    }
+
+    return contracts.filter((contract) => {
+      const fullName =
+        `${contract.lastName} ${contract.firstName}`.toLowerCase();
+
+      return (
+        contract.username.toLowerCase().includes(normalizedSearchValue) ||
+        fullName.includes(normalizedSearchValue) ||
+        contract.gameId.toLowerCase().includes(normalizedSearchValue) ||
+        getStatusLabel(contract.status)
+          .toLowerCase()
+          .includes(normalizedSearchValue)
+      );
+    });
+  }, [contracts, searchValue]);
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredContracts.length / CONTRACTS_PER_PAGE),
+  );
+
+  const paginatedContracts = filteredContracts.slice(
+    (currentPage - 1) * CONTRACTS_PER_PAGE,
+    currentPage * CONTRACTS_PER_PAGE,
+  );
+
+  const pendingContractsCount = contracts.filter(
+    (contract) => contract.status === "PENDING_REVIEW",
+  ).length;
+
+  const approvedContractsCount = contracts.filter(
+    (contract) => contract.status === "APPROVED",
+  ).length;
+
+  const rejectedContractsCount = contracts.filter(
+    (contract) => contract.status === "REJECTED",
+  ).length;
 
   async function loadContracts() {
     try {
@@ -149,39 +194,17 @@ export default function AdminContractsPage() {
     };
   }, []);
 
-  const filteredContracts = useMemo(() => {
-    const normalizedSearchValue = searchValue.trim().toLowerCase();
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      if (currentPage > totalPages) {
+        setCurrentPage(totalPages);
+      }
+    }, 0);
 
-    if (!normalizedSearchValue) {
-      return contracts;
-    }
-
-    return contracts.filter((contract) => {
-      const fullName =
-        `${contract.lastName} ${contract.firstName}`.toLowerCase();
-
-      return (
-        contract.username.toLowerCase().includes(normalizedSearchValue) ||
-        fullName.includes(normalizedSearchValue) ||
-        contract.gameId.toLowerCase().includes(normalizedSearchValue) ||
-        getStatusLabel(contract.status)
-          .toLowerCase()
-          .includes(normalizedSearchValue)
-      );
-    });
-  }, [contracts, searchValue]);
-
-  const pendingContractsCount = contracts.filter(
-    (contract) => contract.status === "PENDING_REVIEW",
-  ).length;
-
-  const approvedContractsCount = contracts.filter(
-    (contract) => contract.status === "APPROVED",
-  ).length;
-
-  const rejectedContractsCount = contracts.filter(
-    (contract) => contract.status === "REJECTED",
-  ).length;
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [currentPage, totalPages]);
 
   return (
     <AppShell backgroundImage="/img/business-image.png">
@@ -291,7 +314,10 @@ export default function AdminContractsPage() {
               <input
                 type="text"
                 value={searchValue}
-                onChange={(event) => setSearchValue(event.target.value)}
+                onChange={(event) => {
+                  setSearchValue(event.target.value);
+                  setCurrentPage(1);
+                }}
                 placeholder="Caută după username, nume, ID sau status..."
                 className="w-full rounded-xl border border-white/10 bg-black/40 py-3 pr-4 pl-11 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-500/40 focus:ring-2 focus:ring-emerald-500/10"
               />
@@ -369,7 +395,7 @@ export default function AdminContractsPage() {
                     )}
 
                   {!isLoading &&
-                    filteredContracts.map((contract) => (
+                    paginatedContracts.map((contract) => (
                       <tr
                         key={contract.id}
                         className="border-b border-white/5 bg-black/20 transition last:border-b-0 hover:bg-white/5"
@@ -417,6 +443,34 @@ export default function AdminContractsPage() {
                     ))}
                 </tbody>
               </table>
+            </div>
+            <div className="mt-6 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                disabled={currentPage === 1}
+                className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                ← Anterior
+              </button>
+
+              <p className="text-sm text-zinc-400">
+                Pagina{" "}
+                <span className="font-semibold text-white">{currentPage}</span>{" "}
+                din{" "}
+                <span className="font-semibold text-white">{totalPages}</span>
+              </p>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setCurrentPage((page) => Math.min(totalPages, page + 1))
+                }
+                disabled={currentPage === totalPages}
+                className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Următor →
+              </button>
             </div>
           </div>
         </div>

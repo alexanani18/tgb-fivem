@@ -7,7 +7,5 @@ interface MafiaLayoutProps {
 }
 
 export default function MafiaLayout({ children }: MafiaLayoutProps) {
-  return (
-    <AppShell backgroundImage="/img/logged-image.png">{children}</AppShell>
-  );
+  return <AppShell backgroundImage="/img/mafia-image.png">{children}</AppShell>;
 }

@@ -12,6 +12,12 @@ type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA" | "GUEST" | "DEV";
 interface ExistingUserRow extends RowDataPacket {
   id: number;
 }
+
+interface RoleRow extends RowDataPacket {
+  id: number;
+  name: UserRole;
+}
+
 interface UserListRow extends RowDataPacket {
   id: number;
   username: string;
@@ -28,22 +34,25 @@ router.get("/", requireAdmin, async (_req, res) => {
     const [users] = await db.execute<UserListRow[]>(
       `
         SELECT
-          id,
-          username,
-          user_role,
-          is_active,
-          created_at,
-          updated_at
-        FROM users
+          u.id,
+          u.username,
+          ur.name AS user_role,
+          u.is_active,
+          u.created_at,
+          u.updated_at
+        FROM users u
+        INNER JOIN user_roles ur
+          ON ur.id = u.user_role_id
         ORDER BY
-          CASE user_role
+          CASE ur.name
             WHEN 'GUEST' THEN 0
             WHEN 'ANGAJAT' THEN 1
             WHEN 'MAFIA' THEN 2
             WHEN 'ADMIN' THEN 3
-            ELSE 4
+            WHEN 'DEV' THEN 4
+            ELSE 5
           END,
-        username ASC
+          u.username ASC
       `,
     );
 
@@ -124,6 +133,25 @@ router.post("/", requireAdmin, async (req, res) => {
       });
     }
 
+    const [roles] = await db.execute<RoleRow[]>(
+      `
+        SELECT id, name
+        FROM user_roles
+        WHERE name = ?
+        LIMIT 1
+      `,
+      [normalizedRole],
+    );
+
+    const selectedRole = roles[0];
+
+    if (!selectedRole) {
+      return res.status(400).json({
+        success: false,
+        message: "Rolul selectat nu există în baza de date.",
+      });
+    }
+
     const passwordHash = await bcrypt.hash(password, 12);
 
     const [result] = await db.execute<ResultSetHeader>(
@@ -131,12 +159,12 @@ router.post("/", requireAdmin, async (req, res) => {
         INSERT INTO users (
           username,
           password_hash,
-          user_role,
+          user_role_id,
           is_active
         )
         VALUES (?, ?, ?, 1)
       `,
-      [normalizedUsername, passwordHash, normalizedRole],
+      [normalizedUsername, passwordHash, selectedRole.id],
     );
 
     return res.status(201).json({

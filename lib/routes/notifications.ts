@@ -280,13 +280,15 @@ router.get(
       const [recipients] = await db.execute<RecipientRow[]>(
         `
           SELECT
-            id,
-            username,
-            user_role
-          FROM users
-          WHERE is_active = 1
-            AND user_role <> 'ADMIN'
-          ORDER BY username ASC
+            u.id,
+            u.username,
+            ur.name AS user_role
+          FROM users u
+          INNER JOIN user_roles ur
+            ON ur.id = u.user_role_id
+          WHERE u.is_active = 1
+            AND ur.name <> 'ADMIN'
+          ORDER BY u.username ASC
         `,
       );
 
@@ -479,13 +481,15 @@ router.post("/", requireAdmin, async (req: Request, res: Response) => {
     const [recipients] = await db.execute<RecipientRow[]>(
       `
         SELECT
-          id,
-          username,
-          user_role
-        FROM users
-        WHERE id = ?
-          AND is_active = 1
-          AND user_role <> 'ADMIN'
+          u.id,
+          u.username,
+          ur.name AS user_role
+        FROM users u
+        INNER JOIN user_roles ur
+          ON ur.id = u.user_role_id
+        WHERE u.id = ?
+          AND u.is_active = 1
+          AND ur.name <> 'ADMIN'
         LIMIT 1
       `,
       [recipientId],
