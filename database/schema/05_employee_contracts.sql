@@ -1,0 +1,58 @@
+CREATE TABLE `employee_contracts` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+
+    `user_id` INT NOT NULL,
+
+    `first_name` VARCHAR(100) NOT NULL,
+    `last_name` VARCHAR(100) NOT NULL,
+
+    `age` INT NOT NULL,
+    `game_id` VARCHAR(50) NOT NULL,
+    `ci_series` VARCHAR(50) NOT NULL,
+    `phone_number` VARCHAR(30) NOT NULL,
+
+    `city_hours` INT NOT NULL,
+
+    `identity_image_path` VARCHAR(500) NOT NULL,
+
+    `accepted_rules` TINYINT(1) NOT NULL DEFAULT 0,
+
+    `employee_signature_name` VARCHAR(255) DEFAULT NULL,
+
+    `status` VARCHAR(30) NOT NULL DEFAULT 'DRAFT',
+
+    `contract_creation_blocked` TINYINT(1) NOT NULL DEFAULT 0,
+
+    `signed_at` DATETIME DEFAULT NULL,
+
+    `approved_by_user_id` INT DEFAULT NULL,
+    `approved_by_name` VARCHAR(255) DEFAULT NULL,
+    `admin_signature_path` VARCHAR(500) DEFAULT NULL,
+    `approved_at` DATETIME DEFAULT NULL,
+
+    `rejected_by_user_id` INT DEFAULT NULL,
+    `rejected_at` DATETIME DEFAULT NULL,
+
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (`id`),
+
+    UNIQUE KEY `uq_employee_contracts_user_id` (`user_id`),
+
+    KEY `idx_employee_contracts_approved_by` (`approved_by_user_id`),
+
+    CONSTRAINT `fk_employee_contracts_user`
+        FOREIGN KEY (`user_id`)
+        REFERENCES `users` (`id`)
+        ON DELETE CASCADE,
+
+    CONSTRAINT `fk_employee_contracts_approved_by`
+        FOREIGN KEY (`approved_by_user_id`)
+        REFERENCES `users` (`id`)
+        ON DELETE SET NULL
+)
+ENGINE = InnoDB
+DEFAULT CHARSET = utf8mb4
+COLLATE = utf8mb4_unicode_ci;
