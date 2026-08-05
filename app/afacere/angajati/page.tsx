@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Search,
   Users,
+  FileSpreadsheet,
 } from "lucide-react";
 
 import AppShell from "../../components/AppShell";
@@ -283,6 +284,39 @@ export default function EmployeesPage() {
     setCurrentPage(1);
   }
 
+  async function handleExportExcel() {
+    try {
+      const response = await fetch(`${API_URL}/users/export/excel`, {
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error("Exportul nu a putut fi generat.");
+      }
+
+      const blob = await response.blob();
+
+      const url = window.URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = `Angajati-Blackfold-${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+      document.body.appendChild(link);
+
+      link.click();
+
+      link.remove();
+
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error(error);
+
+      alert("Fișierul Excel nu a putut fi descărcat.");
+    }
+  }
+
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       void loadEmployees();
@@ -309,6 +343,15 @@ export default function EmployeesPage() {
                 Lista angajaților din The Blackfold Skatehouse.
               </p>
             </div>
+
+            <button
+              type="button"
+              onClick={() => void handleExportExcel()}
+              className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 transition hover:bg-emerald-500/20"
+            >
+              <FileSpreadsheet size={18} />
+              Descarcă Excel
+            </button>
 
             <button
               type="button"

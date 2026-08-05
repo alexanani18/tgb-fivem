@@ -8,6 +8,7 @@ import type {
 import fs from "node:fs";
 import path from "node:path";
 import multer from "multer";
+import ExcelJS from "exceljs";
 
 import { db } from "../db";
 import { requireAdmin } from "../services/requireAdmin";
@@ -372,6 +373,759 @@ router.get("/", requireAdmin, async (_req, res) => {
     return res.status(500).json({
       success: false,
       message: "Eroare internă la încărcarea angajaților.",
+    });
+  }
+});
+
+/*
+|--------------------------------------------------------------------------
+| GET /users/export/excel
+|--------------------------------------------------------------------------
+|
+| Exportă tabelul angajaților în format Excel.
+| Doar ADMIN.
+|
+*/
+
+router.get("/export/excel", requireAdmin, async (req, res) => {
+  try {
+    const [employees] = await db.execute<EmployeeUserRow[]>(
+      `
+        SELECT
+          u.id,
+
+          COALESCE(ec.first_name, u.username) AS first_name,
+          COALESCE(ec.last_name, '') AS last_name,
+
+          ec.game_id AS iban,
+          ec.phone_number,
+          ec.ci_series,
+          ec.city_hours,
+
+          rk.name AS employee_rank,
+
+          ed.status AS employee_status,
+          ed.meeting_attendance,
+          ed.has_uniform,
+          ed.has_car,
+          ed.observations,
+          ed.discord_id,
+
+          u.created_at
+
+        FROM users u
+
+        INNER JOIN user_roles ur
+          ON ur.id = u.user_role_id
+
+        LEFT JOIN user_ranks rk
+          ON rk.id = u.user_rank_id
+
+        LEFT JOIN employee_contracts ec
+          ON ec.user_id = u.id
+
+        LEFT JOIN employee_details ed
+          ON ed.user_id = u.id
+
+        WHERE ur.name IN ('ANGAJAT', 'MAFIA')
+          AND (
+            ed.status IS NULL
+            OR ed.status <> 'DEMISIONAT'
+          )
+
+        ORDER BY
+          COALESCE(rk.sort_order, 999) ASC,
+          COALESCE(ec.last_name, u.username) ASC,
+          COALESCE(ec.first_name, u.username) ASC
+      `,
+    );
+
+    const workbook = new ExcelJS.Workbook();
+
+    const exportedBy = req.session.user?.username ?? "ADMIN";
+    const exportDate = new Date();
+
+    workbook.creator = "TGB FiveM Management System";
+    workbook.lastModifiedBy = exportedBy;
+    workbook.created = exportDate;
+    workbook.modified = exportDate;
+    workbook.title = "Registru Angajați";
+    workbook.subject = "Registrul angajaților Blackfold";
+    workbook.company = "The Blackfold Skatehouse";
+    workbook.category = "Employee Register";
+    workbook.keywords = "Blackfold, Angajați, TGB, FiveM";
+
+    const worksheet = workbook.addWorksheet("Angajați", {
+      properties: {
+        defaultRowHeight: 20,
+      },
+      views: [
+        {
+          state: "frozen",
+          ySplit: 6,
+          showGridLines: false,
+        },
+      ],
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Coloane
+    |--------------------------------------------------------------------------
+    */
+
+    worksheet.columns = [
+      { key: "number", width: 8 },
+      { key: "fullName", width: 28 },
+      { key: "iban", width: 14 },
+      { key: "status", width: 14 },
+      { key: "phoneNumber", width: 17 },
+      { key: "ciSeries", width: 16 },
+      { key: "cityHours", width: 11 },
+      { key: "rank", width: 27 },
+      { key: "meetingAttendance", width: 20 },
+      { key: "createdAt", width: 17 },
+      { key: "observations", width: 35 },
+      { key: "discordId", width: 24 },
+      { key: "hasUniform", width: 13 },
+      { key: "hasCar", width: 11 },
+    ];
+
+    /*
+    |--------------------------------------------------------------------------
+    | Culori
+    |--------------------------------------------------------------------------
+    */
+
+    const colors = {
+      black: "FF080808",
+      darkBlack: "FF000000",
+      gold: "FFB8904D",
+      lightGold: "FFD8B979",
+      white: "FFFFFFFF",
+      headerPink: "FFF3B2B2",
+      border: "FF727272",
+      manager: "FF0A0A0A",
+      specialist: "FF142B50",
+      crew: "FF8B3307",
+      noRank: "FF444444",
+      green: "FF2F8F46",
+      blue: "FF3477B8",
+      red: "FFC83B3B",
+      lightRow: "FFF7F7F7",
+      alternateRow: "FFEFEFEF",
+    };
+
+    const thinBorder: Partial<ExcelJS.Borders> = {
+      top: {
+        style: "thin",
+        color: { argb: colors.border },
+      },
+      left: {
+        style: "thin",
+        color: { argb: colors.border },
+      },
+      bottom: {
+        style: "thin",
+        color: { argb: colors.border },
+      },
+      right: {
+        style: "thin",
+        color: { argb: colors.border },
+      },
+    };
+
+    /*
+    |--------------------------------------------------------------------------
+    | Fundal zona de titlu
+    |--------------------------------------------------------------------------
+    */
+
+    for (let rowNumber = 1; rowNumber <= 4; rowNumber += 1) {
+      const row = worksheet.getRow(rowNumber);
+
+      for (let columnNumber = 1; columnNumber <= 14; columnNumber += 1) {
+        const cell = row.getCell(columnNumber);
+
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: {
+            argb: colors.darkBlack,
+          },
+        };
+      }
+    }
+
+    worksheet.getRow(1).height = 28;
+    worksheet.getRow(2).height = 28;
+    worksheet.getRow(3).height = 28;
+    worksheet.getRow(4).height = 25;
+
+    /*
+    |--------------------------------------------------------------------------
+    | Titlu stânga
+    |--------------------------------------------------------------------------
+    */
+
+    worksheet.mergeCells("A1:J3");
+
+    const titleCell = worksheet.getCell("A1");
+
+    titleCell.value = "THE BLACKFOLD SKATEHOUSE";
+
+    titleCell.font = {
+      name: "Arial",
+      size: 24,
+      bold: true,
+      color: {
+        argb: colors.lightGold,
+      },
+    };
+
+    titleCell.alignment = {
+      vertical: "middle",
+      horizontal: "center",
+    };
+
+    /*
+    |--------------------------------------------------------------------------
+    | Informații export dreapta
+    |--------------------------------------------------------------------------
+    */
+
+    worksheet.mergeCells("K1:L1");
+    worksheet.mergeCells("M1:N1");
+
+    worksheet.mergeCells("K2:L2");
+    worksheet.mergeCells("M2:N2");
+
+    worksheet.mergeCells("K3:N3");
+
+    const exportDateLabelCell = worksheet.getCell("K1");
+    const exportDateValueCell = worksheet.getCell("M1");
+
+    exportDateLabelCell.value = "DATA EXPORTULUI:";
+    exportDateValueCell.value = exportDate;
+    exportDateValueCell.numFmt = "dd.mm.yyyy hh:mm";
+
+    const exportedByLabelCell = worksheet.getCell("K2");
+    const exportedByValueCell = worksheet.getCell("M2");
+
+    exportedByLabelCell.value = "EXPORTAT DE:";
+    exportedByValueCell.value = exportedBy;
+
+    const reportTypeCell = worksheet.getCell("K3");
+
+    reportTypeCell.value = "REGISTRU ANGAJAȚI";
+
+    for (const cell of [exportDateLabelCell, exportedByLabelCell]) {
+      cell.font = {
+        name: "Arial",
+        size: 9,
+        bold: true,
+        color: {
+          argb: colors.lightGold,
+        },
+      };
+
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: "right",
+      };
+    }
+
+    for (const cell of [exportDateValueCell, exportedByValueCell]) {
+      cell.font = {
+        name: "Arial",
+        size: 10,
+        bold: true,
+        color: {
+          argb: colors.white,
+        },
+      };
+
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: "left",
+      };
+    }
+
+    reportTypeCell.font = {
+      name: "Arial",
+      size: 9,
+      bold: true,
+      color: {
+        argb: colors.white,
+      },
+    };
+
+    reportTypeCell.alignment = {
+      vertical: "middle",
+      horizontal: "center",
+    };
+
+    /*
+    |--------------------------------------------------------------------------
+    | Subtitlu
+    |--------------------------------------------------------------------------
+    */
+
+    worksheet.mergeCells("A4:N4");
+
+    const subtitleCell = worksheet.getCell("A4");
+
+    subtitleCell.value = "LISTA ANGAJAȚILOR";
+
+    subtitleCell.font = {
+      name: "Arial",
+      size: 13,
+      bold: true,
+      color: {
+        argb: colors.white,
+      },
+    };
+
+    subtitleCell.alignment = {
+      vertical: "middle",
+      horizontal: "center",
+    };
+
+    /*
+    |--------------------------------------------------------------------------
+    | Spațiu între titlu și tabel
+    |--------------------------------------------------------------------------
+    */
+
+    worksheet.getRow(5).height = 8;
+
+    for (let columnNumber = 1; columnNumber <= 14; columnNumber += 1) {
+      worksheet.getRow(5).getCell(columnNumber).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: {
+          argb: colors.darkBlack,
+        },
+      };
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Header tabel
+    |--------------------------------------------------------------------------
+    */
+
+    const headerRow = worksheet.getRow(6);
+
+    headerRow.values = [
+      "Nr. CRT",
+      "Nume Prenume",
+      "IBAN",
+      "Status",
+      "Nr. Telefon",
+      "Serie CI",
+      "Luni",
+      "Grad",
+      "Prezență Ședință",
+      "Data angajării",
+      "Observații",
+      "ID Discord",
+      "Uniformă",
+      "Mașină",
+    ];
+
+    headerRow.height = 34;
+
+    headerRow.eachCell((cell) => {
+      cell.font = {
+        name: "Arial",
+        size: 10,
+        bold: true,
+        color: {
+          argb: colors.black,
+        },
+      };
+
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: {
+          argb: colors.headerPink,
+        },
+      };
+
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: "center",
+        wrapText: true,
+      };
+
+      cell.border = thinBorder;
+    });
+
+    worksheet.autoFilter = {
+      from: "A6",
+      to: "N6",
+    };
+
+    /*
+    |--------------------------------------------------------------------------
+    | Grupare după grad
+    |--------------------------------------------------------------------------
+    */
+
+    const rankGroups = [
+      {
+        name: "Blackfold Manager",
+        title: "BLACKFOLD MANAGER",
+        fill: colors.manager,
+      },
+      {
+        name: "Blackfold Specialist",
+        title: "BLACKFOLD SPECIALIST",
+        fill: colors.specialist,
+      },
+      {
+        name: "Blackfold Crew",
+        title: "BLACKFOLD CREW",
+        fill: colors.crew,
+      },
+      {
+        name: "Fără grad",
+        title: "FĂRĂ GRAD",
+        fill: colors.noRank,
+      },
+    ];
+
+    let currentRowNumber = 7;
+    let globalEmployeeNumber = 1;
+    let dataRowNumber = 0;
+
+    for (const group of rankGroups) {
+      const groupEmployees = employees.filter(
+        (employee) => (employee.employee_rank ?? "Fără grad") === group.name,
+      );
+
+      if (groupEmployees.length === 0) {
+        continue;
+      }
+
+      worksheet.mergeCells(`A${currentRowNumber}:N${currentRowNumber}`);
+
+      const groupCell = worksheet.getCell(`A${currentRowNumber}`);
+
+      groupCell.value = `${group.title} (${groupEmployees.length})`;
+
+      groupCell.font = {
+        name: "Arial",
+        size: 11,
+        bold: true,
+        color: {
+          argb: colors.white,
+        },
+      };
+
+      groupCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: {
+          argb: group.fill,
+        },
+      };
+
+      groupCell.alignment = {
+        vertical: "middle",
+        horizontal: "left",
+        indent: 1,
+      };
+
+      groupCell.border = thinBorder;
+
+      worksheet.getRow(currentRowNumber).height = 25;
+
+      currentRowNumber += 1;
+
+      for (const employee of groupEmployees) {
+        const status = employee.employee_status ?? "ACTIV";
+
+        const row = worksheet.getRow(currentRowNumber);
+
+        row.values = [
+          globalEmployeeNumber,
+          `${employee.first_name} ${employee.last_name}`.trim(),
+          employee.iban ?? "—",
+          status,
+          employee.phone_number ?? "—",
+          employee.ci_series ?? "—",
+          employee.city_hours ?? "—",
+          employee.employee_rank ?? "Fără grad",
+          employee.meeting_attendance ? "✓" : "✕",
+          employee.created_at,
+          employee.observations ?? "",
+          employee.discord_id ?? "—",
+          employee.has_uniform ? "✓" : "✕",
+          employee.has_car ? "✓" : "✕",
+        ];
+
+        row.height = 24;
+
+        const rowFill =
+          dataRowNumber % 2 === 0 ? colors.lightRow : colors.alternateRow;
+
+        row.eachCell((cell, columnNumber) => {
+          cell.font = {
+            name: "Arial",
+            size: 10,
+            color: {
+              argb: colors.black,
+            },
+          };
+
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: {
+              argb: rowFill,
+            },
+          };
+
+          cell.border = thinBorder;
+
+          cell.alignment = {
+            vertical: "middle",
+            horizontal:
+              columnNumber === 2 || columnNumber === 11 ? "left" : "center",
+            wrapText: columnNumber === 11,
+          };
+        });
+
+        /*
+        |--------------------------------------------------------------------------
+        | Status
+        |--------------------------------------------------------------------------
+        */
+
+        const statusCell = row.getCell(4);
+
+        let statusColor = colors.green;
+
+        if (status === "CONCEDIU") {
+          statusColor = colors.blue;
+        }
+
+        if (status === "DEMISIONAT") {
+          statusColor = colors.red;
+        }
+
+        statusCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: {
+            argb: statusColor,
+          },
+        };
+
+        statusCell.font = {
+          name: "Arial",
+          size: 10,
+          bold: true,
+          color: {
+            argb: colors.white,
+          },
+        };
+
+        /*
+        |--------------------------------------------------------------------------
+        | Prezență / Uniformă / Mașină
+        |--------------------------------------------------------------------------
+        */
+
+        for (const columnNumber of [9, 13, 14]) {
+          const booleanCell = row.getCell(columnNumber);
+
+          const isChecked = booleanCell.value === "✓";
+
+          booleanCell.font = {
+            name: "Arial",
+            size: 14,
+            bold: true,
+            color: {
+              argb: isChecked ? colors.green : colors.red,
+            },
+          };
+
+          booleanCell.alignment = {
+            vertical: "middle",
+            horizontal: "center",
+          };
+        }
+
+        row.getCell(10).numFmt = "dd.mm.yyyy";
+
+        globalEmployeeNumber += 1;
+        currentRowNumber += 1;
+        dataRowNumber += 1;
+      }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Rezumat final
+    |--------------------------------------------------------------------------
+    */
+
+    const managerCount = employees.filter(
+      (employee) => employee.employee_rank === "Blackfold Manager",
+    ).length;
+
+    const specialistCount = employees.filter(
+      (employee) => employee.employee_rank === "Blackfold Specialist",
+    ).length;
+
+    const crewCount = employees.filter(
+      (employee) => employee.employee_rank === "Blackfold Crew",
+    ).length;
+
+    const meetingAttendanceCount = employees.filter((employee) =>
+      Boolean(employee.meeting_attendance),
+    ).length;
+
+    const uniformCount = employees.filter((employee) =>
+      Boolean(employee.has_uniform),
+    ).length;
+
+    const carCount = employees.filter((employee) =>
+      Boolean(employee.has_car),
+    ).length;
+
+    currentRowNumber += 1;
+
+    worksheet.mergeCells(`A${currentRowNumber}:N${currentRowNumber + 2}`);
+
+    const summaryCell = worksheet.getCell(`A${currentRowNumber}`);
+
+    summaryCell.value =
+      `TOTAL ANGAJAȚI: ${employees.length}     |     ` +
+      `MANAGERI: ${managerCount}     |     ` +
+      `SPECIALIȘTI: ${specialistCount}     |     ` +
+      `CREW: ${crewCount}\n` +
+      `PREZENȚĂ ȘEDINȚĂ: ${meetingAttendanceCount}     |     ` +
+      `UNIFORMĂ: ${uniformCount}     |     ` +
+      `MAȘINĂ: ${carCount}     |     ` +
+      `✓ = DA     ✕ = NU`;
+
+    summaryCell.font = {
+      name: "Arial",
+      size: 11,
+      bold: true,
+      color: {
+        argb: colors.lightGold,
+      },
+    };
+
+    summaryCell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: {
+        argb: colors.darkBlack,
+      },
+    };
+
+    summaryCell.alignment = {
+      vertical: "middle",
+      horizontal: "center",
+      wrapText: true,
+    };
+
+    summaryCell.border = {
+      top: {
+        style: "medium",
+        color: {
+          argb: colors.gold,
+        },
+      },
+      bottom: {
+        style: "medium",
+        color: {
+          argb: colors.gold,
+        },
+      },
+      left: {
+        style: "medium",
+        color: {
+          argb: colors.gold,
+        },
+      },
+      right: {
+        style: "medium",
+        color: {
+          argb: colors.gold,
+        },
+      },
+    };
+
+    worksheet.getRow(currentRowNumber).height = 22;
+    worksheet.getRow(currentRowNumber + 1).height = 22;
+    worksheet.getRow(currentRowNumber + 2).height = 22;
+
+    /*
+    |--------------------------------------------------------------------------
+    | Print și footer
+    |--------------------------------------------------------------------------
+    */
+
+    worksheet.pageSetup = {
+      orientation: "landscape",
+      paperSize: 9,
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      horizontalCentered: true,
+      margins: {
+        left: 0.2,
+        right: 0.2,
+        top: 0.4,
+        bottom: 0.4,
+        header: 0.2,
+        footer: 0.2,
+      },
+    };
+
+    worksheet.pageSetup.printArea = `A1:N${currentRowNumber + 2}`;
+
+    worksheet.headerFooter.oddFooter =
+      "&LExport generat din TGB FiveM Management System" +
+      "&CThe Blackfold Skatehouse" +
+      "&RPagina &P din &N";
+
+    /*
+    |--------------------------------------------------------------------------
+    | Generare fișier
+    |--------------------------------------------------------------------------
+    */
+
+    const fileBuffer = await workbook.xlsx.writeBuffer();
+
+    const currentDate = new Intl.DateTimeFormat("en-CA").format(exportDate);
+
+    const fileName = `Angajati-Blackfold-${currentDate}.xlsx`;
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+
+    res.setHeader("Content-Length", Buffer.byteLength(fileBuffer));
+
+    return res.status(200).send(Buffer.from(fileBuffer));
+  } catch (error) {
+    console.error("Export employees Excel error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Fișierul Excel nu a putut fi generat.",
     });
   }
 });
