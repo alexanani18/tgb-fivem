@@ -30,7 +30,7 @@ export default function AppShell({ children, backgroundImage }: AppShellProps) {
   useEffect(() => {
     async function checkSession() {
       try {
-        const response = await fetch("http://localhost:5000/auth/me", {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/me`, {
           method: "GET",
           credentials: "include",
         });

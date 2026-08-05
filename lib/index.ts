@@ -13,6 +13,7 @@ import notificationSubmissionRoutes from "./routes/notificationSubmissions";
 import { cleanupExpiredNotifications } from "./services/notificationCleanup";
 import userRoutes from "./routes/users";
 import contractRoutes from "./routes/contracts";
+import uniformRoutes from "./routes/uniforms";
 
 const app = express();
 
@@ -39,6 +40,13 @@ app.use(
 app.use(
   "/contract-images",
   express.static(path.join(process.cwd(), "public", "contract-images")),
+);
+
+app.use(
+  "/uniforms",
+  express.static(
+    path.join(process.cwd(), "public", "uniforms"),
+  ),
 );
 
 app.use(
@@ -75,6 +83,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/notification-submissions", notificationSubmissionRoutes);
 app.use("/users", userRoutes);
 app.use("/contracts", contractRoutes);
+app.use("/api/uniforms", uniformRoutes);
 
 /*
 |--------------------------------------------------------------------------

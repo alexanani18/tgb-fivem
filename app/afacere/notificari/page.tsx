@@ -43,7 +43,7 @@ import {
   type SessionUser,
 } from "./types";
 
-const API_URL = "http://localhost:5000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL!;
 
 function isNotificationRead(notification: Notification): boolean {
   return notification.is_read === 1 || notification.is_read === true;
