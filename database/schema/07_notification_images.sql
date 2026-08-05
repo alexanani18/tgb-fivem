@@ -3,7 +3,10 @@ CREATE TABLE `notification_images` (
 
     `notification_id` INT NOT NULL,
 
-    `image_path` VARCHAR(500) NOT NULL,
+    `image_path` VARCHAR(255) NOT NULL,
+
+    `position` TINYINT NOT NULL,
+    `display_name` VARCHAR(255) DEFAULT NULL,
 
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 

@@ -1,10 +1,27 @@
-import { Router } from "express";
+import {Router} from "express";
 import bcrypt from "bcryptjs";
 import type {
-  PoolConnection,
   ResultSetHeader,
   RowDataPacket,
 } from "mysql2/promise";
+import {
+  createUser,
+  getRoleByName,
+  userExists,
+  getUserRanks,
+  getEmployees,
+  getEmployeeById,
+  employeeExists,
+  ensureEmployeeDetails,
+  updateEmployeeDetails,
+  userRankExists,
+  updateUser,
+} from "../database/users";
+import type {
+  ContractStatus,
+  EmployeeStatus,
+  UserRole,
+} from "../types/users";
 import fs from "node:fs";
 import path from "node:path";
 import multer from "multer";
@@ -14,26 +31,13 @@ import { db } from "../db";
 import { requireAdmin } from "../services/requireAdmin";
 
 const router = Router();
-
-type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA" | "GUEST" | "DEV";
-
-type EmployeeStatus = "ACTIV" | "CONCEDIU" | "DEMISIONAT";
-
-type ContractStatus = "DRAFT" | "PENDING_REVIEW" | "APPROVED" | "REJECTED";
-
-interface ExistingUserRow extends RowDataPacket {
+interface EmployeeContractExistsRow extends RowDataPacket {
   id: number;
 }
 
-interface RoleRow extends RowDataPacket {
+interface EmployeeIdentityRow extends RowDataPacket {
   id: number;
-  name: UserRole;
-}
-
-interface RankRow extends RowDataPacket {
-  id: number;
-  name: string;
-  sort_order: number;
+  identity_image_path: string | null;
 }
 
 interface EmployeeUserRow extends RowDataPacket {
@@ -58,57 +62,6 @@ interface EmployeeUserRow extends RowDataPacket {
   discord_id: string | null;
 
   created_at: Date;
-}
-
-interface EmployeeExistsRow extends RowDataPacket {
-  id: number;
-}
-
-interface EmployeeDetailsRow extends RowDataPacket {
-  id: number;
-  username: string;
-  is_active: number;
-  created_at: Date;
-  updated_at: Date;
-
-  website_role: UserRole;
-
-  employee_rank_id: number | null;
-  employee_rank: string | null;
-
-  first_name: string | null;
-  last_name: string | null;
-  age: number | null;
-  iban: string | number | null;
-  ci_series: string | null;
-  phone_number: string | null;
-  city_hours: string | number | null;
-  identity_image_path: string | null;
-  employee_signature_name: string | null;
-
-  contract_status: ContractStatus | null;
-
-  signed_at: Date | null;
-  approved_by_name: string | null;
-  admin_signature_path: string | null;
-  approved_at: Date | null;
-  rejected_at: Date | null;
-
-  employee_status: EmployeeStatus | null;
-  meeting_attendance: number | null;
-  has_uniform: number | null;
-  has_car: number | null;
-  discord_id: string | null;
-  observations: string | null;
-}
-
-interface EmployeeContractExistsRow extends RowDataPacket {
-  id: number;
-}
-
-interface EmployeeIdentityRow extends RowDataPacket {
-  id: number;
-  identity_image_path: string | null;
 }
 
 const CONTRACT_IDENTITIES_DIRECTORY = path.join(
@@ -232,52 +185,6 @@ function normalizeOptionalText(
   return normalizedValue || null;
 }
 
-async function employeeExists(
-  connection: PoolConnection,
-  userId: number,
-): Promise<boolean> {
-  const [employees] = await connection.execute<EmployeeExistsRow[]>(
-    `
-      SELECT
-        u.id
-      FROM users u
-
-      INNER JOIN user_roles ur
-        ON ur.id = u.user_role_id
-
-      WHERE u.id = ?
-        AND ur.name IN ('ANGAJAT', 'MAFIA')
-
-      LIMIT 1
-    `,
-    [userId],
-  );
-
-  return employees.length > 0;
-}
-
-async function ensureEmployeeDetails(
-  connection: PoolConnection,
-  userId: number,
-): Promise<void> {
-  await connection.execute<ResultSetHeader>(
-    `
-      INSERT INTO employee_details (
-        user_id,
-        status,
-        meeting_attendance,
-        has_uniform,
-        has_car
-      )
-      VALUES (?, 'ACTIV', 0, 0, 0)
-
-      ON DUPLICATE KEY UPDATE
-        user_id = ?
-    `,
-    [userId, userId],
-  );
-}
-
 /*
 |--------------------------------------------------------------------------
 | GET /users
@@ -286,56 +193,7 @@ async function ensureEmployeeDetails(
 
 router.get("/", requireAdmin, async (_req, res) => {
   try {
-    const [users] = await db.execute<EmployeeUserRow[]>(
-      `
-        SELECT
-          u.id,
-
-          COALESCE(ec.first_name, u.username) AS first_name,
-          COALESCE(ec.last_name, '') AS last_name,
-
-          ec.game_id AS iban,
-          ec.phone_number,
-          ec.ci_series,
-          ec.city_hours,
-
-          rk.name AS employee_rank,
-
-          ed.status AS employee_status,
-          ed.meeting_attendance,
-          ed.has_uniform,
-          ed.has_car,
-          ed.observations,
-          ed.discord_id,
-
-          u.created_at
-
-        FROM users u
-
-        INNER JOIN user_roles ur
-          ON ur.id = u.user_role_id
-
-        LEFT JOIN user_ranks rk
-          ON rk.id = u.user_rank_id
-
-        LEFT JOIN employee_contracts ec
-          ON ec.user_id = u.id
-
-        LEFT JOIN employee_details ed
-          ON ed.user_id = u.id
-
-        WHERE ur.name IN ('ANGAJAT', 'MAFIA')
-          AND (
-            ed.status IS NULL
-            OR ed.status <> 'DEMISIONAT'
-          )
-
-        ORDER BY
-          COALESCE(rk.sort_order, 999) ASC,
-          COALESCE(ec.last_name, u.username) ASC,
-          COALESCE(ec.first_name, u.username) ASC
-      `,
-    );
+    const users = await getEmployees();
 
     return res.status(200).json({
       success: true,
@@ -1138,16 +996,7 @@ router.get("/export/excel", requireAdmin, async (req, res) => {
 
 router.get("/ranks", requireAdmin, async (_req, res) => {
   try {
-    const [ranks] = await db.execute<RankRow[]>(
-      `
-        SELECT
-          id,
-          name,
-          sort_order
-        FROM user_ranks
-        ORDER BY sort_order ASC, name ASC
-      `,
-    );
+    const ranks = await getUserRanks();
 
     return res.status(200).json({
       success: true,
@@ -1185,66 +1034,7 @@ router.get("/:userId", requireAdmin, async (req, res) => {
       });
     }
 
-    const [employees] = await db.execute<EmployeeDetailsRow[]>(
-      `
-        SELECT
-          u.id,
-          u.username,
-          u.is_active,
-          u.created_at,
-          u.updated_at,
-
-          ur.name AS website_role,
-
-          u.user_rank_id AS employee_rank_id,
-          rk.name AS employee_rank,
-
-          ec.first_name,
-          ec.last_name,
-          ec.age,
-          ec.game_id AS iban,
-          ec.ci_series,
-          ec.phone_number,
-          ec.city_hours,
-          ec.identity_image_path,
-          ec.employee_signature_name,
-          ec.status AS contract_status,
-          ec.signed_at,
-          ec.approved_by_name,
-          ec.admin_signature_path,
-          ec.approved_at,
-          ec.rejected_at,
-
-          ed.status AS employee_status,
-          ed.meeting_attendance,
-          ed.has_uniform,
-          ed.has_car,
-          ed.discord_id,
-          ed.observations
-
-        FROM users u
-
-        INNER JOIN user_roles ur
-          ON ur.id = u.user_role_id
-
-        LEFT JOIN user_ranks rk
-          ON rk.id = u.user_rank_id
-
-        LEFT JOIN employee_contracts ec
-          ON ec.user_id = u.id
-
-        LEFT JOIN employee_details ed
-          ON ed.user_id = u.id
-
-        WHERE u.id = ?
-          AND ur.name IN ('ANGAJAT', 'MAFIA')
-
-        LIMIT 1
-      `,
-      [userId],
-    );
-
-    const employee = employees[0];
+    const employee = await getEmployeeById(userId);
 
     if (!employee) {
       return res.status(404).json({
@@ -1790,32 +1580,11 @@ router.patch("/:userId/details", requireAdmin, async (req, res) => {
 
     await ensureEmployeeDetails(connection, userId);
 
-    const updateFields: string[] = [];
-    const updateValues: number[] = [];
-
-    if (includesMeetingAttendance) {
-      updateFields.push("meeting_attendance = ?");
-      updateValues.push(meetingAttendance ? 1 : 0);
-    }
-
-    if (includesUniform) {
-      updateFields.push("has_uniform = ?");
-      updateValues.push(hasUniform ? 1 : 0);
-    }
-
-    if (includesCar) {
-      updateFields.push("has_car = ?");
-      updateValues.push(hasCar ? 1 : 0);
-    }
-
-    await connection.execute<ResultSetHeader>(
-      `
-        UPDATE employee_details
-        SET ${updateFields.join(", ")}
-        WHERE user_id = ?
-      `,
-      [...updateValues, userId],
-    );
+    await updateEmployeeDetails(connection, userId, {
+      meetingAttendance,
+      hasUniform,
+      hasCar,
+    });
 
     await connection.commit();
 
@@ -1988,20 +1757,12 @@ router.patch("/:userId", requireAdmin, async (req, res) => {
     }
 
     if (includesRank && normalizedRankId) {
-      const [ranks] = await connection.execute<RankRow[]>(
-        `
-          SELECT
-            id,
-            name,
-            sort_order
-          FROM user_ranks
-          WHERE id = ?
-          LIMIT 1
-        `,
-        [normalizedRankId],
+      const rankExists = await userRankExists(
+        connection,
+        normalizedRankId,
       );
 
-      if (ranks.length === 0) {
+      if (!rankExists) {
         await connection.rollback();
 
         return res.status(400).json({
@@ -2011,29 +1772,12 @@ router.patch("/:userId", requireAdmin, async (req, res) => {
       }
     }
 
-    const userUpdateFields: string[] = [];
-    const userUpdateValues: number[] = [];
-
-    if (includesRank && normalizedRankId) {
-      userUpdateFields.push("user_rank_id = ?");
-      userUpdateValues.push(normalizedRankId);
-    }
-
-    if (includesIsActive) {
-      userUpdateFields.push("is_active = ?");
-      userUpdateValues.push(isActive ? 1 : 0);
-    }
-
-    if (userUpdateFields.length > 0) {
-      await connection.execute<ResultSetHeader>(
-        `
-          UPDATE users
-          SET ${userUpdateFields.join(", ")}
-          WHERE id = ?
-        `,
-        [...userUpdateValues, userId],
-      );
-    }
+    await updateUser(connection, userId, {
+      ...(includesRank && normalizedRankId
+        ? { rankId: normalizedRankId }
+        : {}),
+      ...(includesIsActive ? { isActive } : {}),
+    });
 
     const mustUpdateEmployeeDetails =
       includesStatus ||
@@ -2046,47 +1790,31 @@ router.patch("/:userId", requireAdmin, async (req, res) => {
     if (mustUpdateEmployeeDetails) {
       await ensureEmployeeDetails(connection, userId);
 
-      const detailUpdateFields: string[] = [];
-      const detailUpdateValues: Array<number | string | null> = [];
+      await updateEmployeeDetails(connection, userId, {
+        ...(includesStatus && normalizedStatus
+          ? { status: normalizedStatus }
+          : {}),
 
-      if (includesStatus && normalizedStatus) {
-        detailUpdateFields.push("status = ?");
-        detailUpdateValues.push(normalizedStatus);
-      }
+        ...(includesDiscordId
+          ? { discordId: normalizedDiscordId ?? null }
+          : {}),
 
-      if (includesDiscordId) {
-        detailUpdateFields.push("discord_id = ?");
-        detailUpdateValues.push(normalizedDiscordId ?? null);
-      }
+        ...(includesObservations
+          ? { observations: normalizedObservations ?? null }
+          : {}),
 
-      if (includesObservations) {
-        detailUpdateFields.push("observations = ?");
-        detailUpdateValues.push(normalizedObservations ?? null);
-      }
+        ...(includesMeetingAttendance
+          ? { meetingAttendance }
+          : {}),
 
-      if (includesMeetingAttendance) {
-        detailUpdateFields.push("meeting_attendance = ?");
-        detailUpdateValues.push(meetingAttendance ? 1 : 0);
-      }
+        ...(includesUniform
+          ? { hasUniform }
+          : {}),
 
-      if (includesUniform) {
-        detailUpdateFields.push("has_uniform = ?");
-        detailUpdateValues.push(hasUniform ? 1 : 0);
-      }
-
-      if (includesCar) {
-        detailUpdateFields.push("has_car = ?");
-        detailUpdateValues.push(hasCar ? 1 : 0);
-      }
-
-      await connection.execute<ResultSetHeader>(
-        `
-          UPDATE employee_details
-          SET ${detailUpdateFields.join(", ")}
-          WHERE user_id = ?
-        `,
-        [...detailUpdateValues, userId],
-      );
+        ...(includesCar
+          ? { hasCar }
+          : {}),
+      });
     }
 
     await connection.commit();
@@ -2161,37 +1889,16 @@ router.post("/", requireAdmin, async (req, res) => {
       });
     }
 
-    const [existingUsers] = await db.execute<ExistingUserRow[]>(
-      `
-        SELECT
-          id
-        FROM users
-        WHERE username = ?
-        LIMIT 1
-      `,
-      [normalizedUsername],
-    );
+    const exists = await userExists(normalizedUsername);
 
-    if (existingUsers.length > 0) {
+    if (exists) {
       return res.status(409).json({
         success: false,
         message: "Există deja un utilizator cu acest username.",
       });
     }
 
-    const [roles] = await db.execute<RoleRow[]>(
-      `
-        SELECT
-          id,
-          name
-        FROM user_roles
-        WHERE name = ?
-        LIMIT 1
-      `,
-      [normalizedRole],
-    );
-
-    const selectedRole = roles[0];
+    const selectedRole = await getRoleByName(normalizedRole);
 
     if (!selectedRole) {
       return res.status(400).json({
@@ -2202,25 +1909,18 @@ router.post("/", requireAdmin, async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 12);
 
-    const [result] = await db.execute<ResultSetHeader>(
-      `
-        INSERT INTO users (
-          username,
-          password_hash,
-          user_role_id,
-          is_active
-        )
-        VALUES (?, ?, ?, 1)
-      `,
-      [normalizedUsername, passwordHash, selectedRole.id],
-    );
+    const userId = await createUser({
+      username: normalizedUsername,
+      passwordHash,
+      roleId: selectedRole.id,
+    });
 
     return res.status(201).json({
       success: true,
       message: "Utilizatorul a fost creat cu succes.",
 
       user: {
-        id: result.insertId,
+        id: userId,
         username: normalizedUsername,
         role: normalizedRole,
         isActive: true,
