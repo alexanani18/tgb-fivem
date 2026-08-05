@@ -876,12 +876,21 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
 
     const [userResult] = await connection.execute<ResultSetHeader>(
       `
-        UPDATE users
-        SET
-          user_role = 'ANGAJAT'
-        WHERE id = ?
-          AND user_role = 'GUEST'
-      `,
+    UPDATE users
+    SET user_role_id = (
+      SELECT id
+      FROM user_roles
+      WHERE name = 'ANGAJAT'
+      LIMIT 1
+    )
+    WHERE id = ?
+      AND user_role_id = (
+        SELECT id
+        FROM user_roles
+        WHERE name = 'GUEST'
+        LIMIT 1
+      )
+  `,
       [contract.user_id],
     );
 

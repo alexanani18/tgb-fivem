@@ -96,6 +96,11 @@ const sidebarSections: SidebarSection[] = [
         icon: Mail,
         showUnreadBadge: true,
       },
+      {
+        label: "Uniformă",
+        href: "/afacere/uniforma",
+        icon: Shield,
+      },
     ],
   },
   {
@@ -372,7 +377,7 @@ export default function DashboardSidebar({
       return pathname.startsWith("/afacere/notificari");
     }
 
-    if (href === "cont/schimbare-parola") {
+    if (href === "/cont/schimbare-parola") {
       return pathname.startsWith("/cont/schimbare-parola");
     }
 

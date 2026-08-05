@@ -7,11 +7,13 @@ import { requireAuth } from "../services/requireAuth";
 
 const router = Router();
 
+type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA" | "DEV" | "GUEST";
+
 interface UserRow extends RowDataPacket {
   id: number;
   username: string;
   password_hash: string;
-  user_role: "ADMIN" | "ANGAJAT" | "MAFIA" | "DEV" | "GUEST";
+  user_role: UserRole;
   is_active: number;
 }
 
@@ -41,13 +43,15 @@ router.post("/login", async (req, res) => {
     const [users] = await db.execute<UserRow[]>(
       `
         SELECT
-          id,
-          username,
-          password_hash,
-          user_role,
-          is_active
-        FROM users
-        WHERE username = ?
+          u.id,
+          u.username,
+          u.password_hash,
+          ur.name AS user_role,
+          u.is_active
+        FROM users u
+        INNER JOIN user_roles ur
+          ON ur.id = u.user_role_id
+        WHERE u.username = ?
         LIMIT 1
       `,
       [username.trim()],
@@ -170,13 +174,15 @@ router.patch("/schimbare-parola", async (req, res) => {
     const [users] = await db.execute<UserRow[]>(
       `
         SELECT
-          id,
-          username,
-          password_hash,
-          user_role,
-          is_active
-        FROM users
-        WHERE id = ?
+          u.id,
+          u.username,
+          u.password_hash,
+          ur.name AS user_role,
+          u.is_active
+        FROM users u
+        INNER JOIN user_roles ur
+          ON ur.id = u.user_role_id
+        WHERE u.id = ?
         LIMIT 1
       `,
       [sessionUser.id],

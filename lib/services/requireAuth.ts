@@ -3,10 +3,12 @@ import type { RowDataPacket } from "mysql2";
 
 import { db } from "../db";
 
+type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA" | "GUEST" | "DEV";
+
 interface ActiveUserRow extends RowDataPacket {
   id: number;
   username: string;
-  user_role: "ADMIN" | "ANGAJAT" | "MAFIA" | "GUEST" | "DEV";
+  user_role: UserRole;
   is_active: number;
 }
 
@@ -28,12 +30,14 @@ export async function requireAuth(
     const [users] = await db.execute<ActiveUserRow[]>(
       `
         SELECT
-          id,
-          username,
-          user_role,
-          is_active
-        FROM users
-        WHERE id = ?
+          u.id,
+          u.username,
+          ur.name AS user_role,
+          u.is_active
+        FROM users u
+        INNER JOIN user_roles ur
+          ON ur.id = u.user_role_id
+        WHERE u.id = ?
         LIMIT 1
       `,
       [sessionUser.id],

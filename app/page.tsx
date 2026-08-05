@@ -18,7 +18,7 @@ export default function Home() {
     setIsLoading(true);
 
     try {
-      const response = await fetch("http://localhost:5000/auth/login", {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -61,7 +61,7 @@ export default function Home() {
       <section className="relative z-10 w-full max-w-md rounded-2xl border border-[#B8904D]/40 bg-black/75 p-8 shadow-2xl backdrop-blur-md">
         <div className="mb-8 text-center">
           <p className="mb-2 text-sm uppercase tracking-[0.35em] text-[#B8904D]/90">
-            Restricted access
+            Acces restricționat
           </p>
 
           <h1 className="text-4xl font-bold tracking-wider text-[#B8904D]">
