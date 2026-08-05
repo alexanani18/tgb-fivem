@@ -478,7 +478,7 @@ export default function EmployeeDetailsPage() {
   return (
     <AppShell backgroundImage="/img/business-image.png">
       <div className="p-8">
-        <div className="mx-auto max-w-7xl rounded-2xl border border-white/10 bg-black/40 p-8 backdrop-blur-md">
+        <div className="mx-auto w-full rounded-2xl border border-white/10 bg-black/40 p-8 backdrop-blur-md">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <Link

@@ -580,7 +580,7 @@ export default function NotificationsPage() {
 
   return (
     <AppShell backgroundImage="/img/business-image.png">
-      <div className="mx-auto w-full max-w-7xl p-5 md:p-8">
+      <div className="mx-auto w-full p-5 md:p-8">
         <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/45 shadow-2xl backdrop-blur-md">
           <header className="border-b border-white/10 p-6 md:p-8">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">

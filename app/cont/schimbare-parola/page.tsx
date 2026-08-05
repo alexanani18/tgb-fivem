@@ -99,7 +99,7 @@ export default function ChangePasswordPage() {
   return (
     <AppShell backgroundImage="/img/business-image.png">
       <main className="min-h-screen px-5 py-6 text-white md:px-8 md:py-8">
-        <div className="mx-auto w-full max-w-6xl">
+        <div className="mx-auto w-full">
           <div className="mb-8">
             <div className="mb-3 flex items-center gap-2 text-sm text-white/50">
               <span>Cont</span>

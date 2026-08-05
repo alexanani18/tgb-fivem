@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { Download, FileText } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 
 import AppShell from "../components/AppShell";
 
@@ -44,11 +45,55 @@ interface ContractResponse {
   message?: string;
 }
 
+interface GeneratedContractDocument {
+  documentNumber: string;
+  currentVersion: number;
+  pngPath: string;
+  pdfPath: string;
+  generatedAt: string;
+}
+
+interface GeneratedContractResponse {
+  success: boolean;
+  document: GeneratedContractDocument | null;
+  message?: string;
+}
+
+const API_URL = "http://localhost:5000";
+
+function formatDate(dateValue: string | null): string {
+  if (!dateValue) {
+    return "Dată indisponibilă";
+  }
+
+  const date = new Date(dateValue);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Dată indisponibilă";
+  }
+
+  return new Intl.DateTimeFormat("ro-RO", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 export default function ContractPage() {
   const [contract, setContract] = useState<ContractData | null>(null);
   const [canCreateContract, setCanCreateContract] = useState(false);
+
+  const [generatedDocument, setGeneratedDocument] =
+    useState<GeneratedContractDocument | null>(null);
+
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingDocument, setIsLoadingDocument] = useState(false);
+
   const [errorMessage, setErrorMessage] = useState("");
+  const [documentErrorMessage, setDocumentErrorMessage] = useState("");
+
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [age, setAge] = useState("");
@@ -56,13 +101,100 @@ export default function ContractPage() {
   const [ciSeries, setCiSeries] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [cityHours, setCityHours] = useState("");
+
   const [identityImage, setIdentityImage] = useState<File | null>(null);
   const [identityImagePreview, setIdentityImagePreview] = useState("");
   const [identityImageError, setIdentityImageError] = useState("");
+
   const [acceptedRules, setAcceptedRules] = useState(false);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
   const [submitError, setSubmitError] = useState("");
+
+  const loadGeneratedDocument = useCallback(async () => {
+    try {
+      setIsLoadingDocument(true);
+      setDocumentErrorMessage("");
+
+      const response = await fetch(`${API_URL}/contracts/me/document`, {
+        method: "GET",
+        credentials: "include",
+      });
+
+      const data = (await response.json()) as GeneratedContractResponse;
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message ?? "Documentul contractului nu a putut fi încărcat.",
+        );
+      }
+
+      setGeneratedDocument(data.document);
+    } catch (error) {
+      setDocumentErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "A apărut o eroare la încărcarea documentului.",
+      );
+    } finally {
+      setIsLoadingDocument(false);
+    }
+  }, []);
+
+  const loadContract = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setErrorMessage("");
+
+      const response = await fetch(`${API_URL}/contracts/me`, {
+        method: "GET",
+        credentials: "include",
+      });
+
+      const data = (await response.json()) as ContractResponse;
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message ?? "Contractul nu a putut fi încărcat.");
+      }
+
+      setContract(data.contract);
+      setCanCreateContract(data.canCreateContract);
+
+      if (data.contract?.status === "APPROVED") {
+        await loadGeneratedDocument();
+      } else {
+        setGeneratedDocument(null);
+        setDocumentErrorMessage("");
+      }
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "A apărut o eroare necunoscută.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [loadGeneratedDocument]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      void loadContract();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [loadContract]);
+
+  useEffect(() => {
+    return () => {
+      if (identityImagePreview) {
+        URL.revokeObjectURL(identityImagePreview);
+      }
+    };
+  }, [identityImagePreview]);
 
   function handleIdentityImageChange(
     event: React.ChangeEvent<HTMLInputElement>,
@@ -70,6 +202,10 @@ export default function ContractPage() {
     const file = event.target.files?.[0];
 
     setIdentityImageError("");
+
+    if (identityImagePreview) {
+      URL.revokeObjectURL(identityImagePreview);
+    }
 
     if (!file) {
       setIdentityImage(null);
@@ -101,55 +237,6 @@ export default function ContractPage() {
     setIdentityImage(file);
     setIdentityImagePreview(URL.createObjectURL(file));
   }
-
-  useEffect(() => {
-    return () => {
-      if (identityImagePreview) {
-        URL.revokeObjectURL(identityImagePreview);
-      }
-    };
-  }, [identityImagePreview]);
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      async function loadContract() {
-        try {
-          setIsLoading(true);
-          setErrorMessage("");
-
-          const response = await fetch("http://localhost:5000/contracts/me", {
-            method: "GET",
-            credentials: "include",
-          });
-
-          const data = (await response.json()) as ContractResponse;
-
-          if (!response.ok || !data.success) {
-            throw new Error(
-              data.message ?? "Contractul nu a putut fi încărcat.",
-            );
-          }
-
-          setContract(data.contract);
-          setCanCreateContract(data.canCreateContract);
-        } catch (error) {
-          setErrorMessage(
-            error instanceof Error
-              ? error.message
-              : "A apărut o eroare necunoscută.",
-          );
-        } finally {
-          setIsLoading(false);
-        }
-      }
-
-      void loadContract();
-    }, 0);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, []);
 
   async function handleSignContract() {
     setSubmitMessage("");
@@ -210,7 +297,7 @@ export default function ContractPage() {
     try {
       setIsSubmitting(true);
 
-      const response = await fetch("http://localhost:5000/contracts/sign", {
+      const response = await fetch(`${API_URL}/contracts/sign`, {
         method: "POST",
         credentials: "include",
         body: formData,
@@ -231,21 +318,7 @@ export default function ContractPage() {
           "Contractul a fost semnat și trimis către ADMIN pentru verificare.",
       );
 
-      const refreshedResponse = await fetch(
-        "http://localhost:5000/contracts/me",
-        {
-          method: "GET",
-          credentials: "include",
-        },
-      );
-
-      const refreshedData =
-        (await refreshedResponse.json()) as ContractResponse;
-
-      if (refreshedResponse.ok && refreshedData.success) {
-        setContract(refreshedData.contract);
-        setCanCreateContract(refreshedData.canCreateContract);
-      }
+      await loadContract();
     } catch (error) {
       setSubmitError(
         error instanceof Error
@@ -265,7 +338,7 @@ export default function ContractPage() {
   return (
     <AppShell backgroundImage="/img/business-image.png">
       <div className="min-h-full p-8">
-        <div className="mx-auto max-w-6xl">
+        <div className="mx-auto w-full">
           <div className="rounded-2xl border border-amber-500/20 bg-black/75 p-8 shadow-2xl backdrop-blur-md">
             <p className="text-sm font-semibold tracking-[0.25em] text-amber-400 uppercase">
               The Gentleman Blackfold
@@ -325,7 +398,7 @@ export default function ContractPage() {
 
                     <div className="mt-10 border-t border-white/10 pt-8">
                       <div>
-                        <h2 className=" text-xl font-semibold text-white">
+                        <h2 className="text-xl font-semibold text-white">
                           Poză buletin
                         </h2>
 
@@ -549,6 +622,7 @@ export default function ContractPage() {
                         </p>
                       </div>
                     </div>
+
                     <div className="mt-10 border-t border-white/10 pt-8">
                       <div>
                         <p className="text-xs font-semibold tracking-[0.2em] text-amber-400 uppercase">
@@ -647,6 +721,7 @@ export default function ContractPage() {
                         </div>
                       </div>
                     </div>
+
                     <div className="mt-10 border-t border-white/10 pt-8">
                       <div>
                         <p className="text-xs font-semibold tracking-[0.2em] text-amber-400 uppercase">
@@ -800,17 +875,104 @@ export default function ContractPage() {
                           </p>
 
                           <p className="mt-2 font-medium text-white">
-                            {contract.approvedAt
-                              ? new Intl.DateTimeFormat("ro-RO", {
-                                  day: "2-digit",
-                                  month: "long",
-                                  year: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                }).format(new Date(contract.approvedAt))
-                              : "Dată indisponibilă"}
+                            {formatDate(contract.approvedAt)}
                           </p>
                         </div>
+                      </div>
+
+                      <div className="mt-6 border-t border-white/10 pt-6">
+                        <div className="flex items-center gap-3">
+                          <FileText size={20} className="text-emerald-300" />
+
+                          <h3 className="text-lg font-semibold text-white">
+                            Contractul tău oficial
+                          </h3>
+                        </div>
+
+                        {isLoadingDocument && (
+                          <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-5">
+                            <p className="text-sm text-zinc-300">
+                              Se încarcă documentul...
+                            </p>
+                          </div>
+                        )}
+
+                        {!isLoadingDocument && documentErrorMessage && (
+                          <div className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 p-5">
+                            <p className="text-sm font-medium text-red-300">
+                              {documentErrorMessage}
+                            </p>
+                          </div>
+                        )}
+
+                        {!isLoadingDocument &&
+                          !documentErrorMessage &&
+                          !generatedDocument && (
+                            <div className="mt-5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-5">
+                              <p className="text-sm text-amber-200">
+                                Contractul a fost aprobat, dar documentul
+                                oficial nu a fost încă generat de un
+                                administrator.
+                              </p>
+                            </div>
+                          )}
+
+                        {!isLoadingDocument && generatedDocument && (
+                          <div className="mt-5">
+                            <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/30 p-3">
+                              <div className="relative mx-auto aspect-[2/3] w-full max-w-3xl">
+                                <Image
+                                  src={`${API_URL}${generatedDocument.pngPath}`}
+                                  alt={`Contract ${generatedDocument.documentNumber}`}
+                                  fill
+                                  unoptimized
+                                  className="object-contain"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="mt-5 grid gap-4 sm:grid-cols-3">
+                              <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                                <p className="text-xs font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+                                  Număr contract
+                                </p>
+
+                                <p className="mt-2 font-semibold text-white">
+                                  {generatedDocument.documentNumber}
+                                </p>
+                              </div>
+
+                              <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                                <p className="text-xs font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+                                  Versiune
+                                </p>
+
+                                <p className="mt-2 font-semibold text-white">
+                                  v{generatedDocument.currentVersion}
+                                </p>
+                              </div>
+
+                              <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                                <p className="text-xs font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+                                  Generat la
+                                </p>
+
+                                <p className="mt-2 font-semibold text-white">
+                                  {formatDate(generatedDocument.generatedAt)}
+                                </p>
+                              </div>
+                            </div>
+
+                            <a
+                              href={`${API_URL}${generatedDocument.pdfPath}`}
+                              download={`${generatedDocument.documentNumber}.pdf`}
+                              className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-500/20 px-6 py-4 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/30 sm:w-auto"
+                            >
+                              <Download size={18} />
+                              Descarcă contractul PDF
+                            </a>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

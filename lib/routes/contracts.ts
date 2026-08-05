@@ -7,6 +7,7 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { db } from "../db";
 import { requireAuth } from "../services/requireAuth";
 import { requireAdmin } from "../services/requireAdmin";
+import { generateEmployeeContract } from "../services/contractGenerationService";
 
 const router = Router();
 
@@ -142,6 +143,14 @@ interface AdminContractListRow extends RowDataPacket {
   rejected_at: string | null;
 }
 
+interface GeneratedContractRow extends RowDataPacket {
+  document_number: string;
+  current_version: number;
+  png_path: string;
+  pdf_path: string;
+  generated_at: Date;
+}
+
 router.get("/me", requireAuth, async (req, res) => {
   try {
     const sessionUser = req.session.user;
@@ -237,6 +246,67 @@ router.get("/me", requireAuth, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Eroare internă la încărcarea contractului.",
+    });
+  }
+});
+
+router.get("/me/document", async (req, res) => {
+  try {
+    const sessionUser = req.session.user;
+
+    if (!sessionUser) {
+      return res.status(401).json({
+        success: false,
+        message: "Nu ești autentificat.",
+      });
+    }
+
+    const [rows] = await db.query<GeneratedContractRow[]>(
+      `
+        SELECT
+          ed.document_number,
+          ed.current_version,
+          edv.png_path,
+          edv.pdf_path,
+          edv.generated_at
+        FROM employee_documents ed
+        INNER JOIN employee_document_versions edv
+          ON edv.document_id = ed.id
+          AND edv.version_number = ed.current_version
+        INNER JOIN employee_contracts ec
+          ON ec.id = ed.contract_id
+        WHERE ec.user_id = ?
+          AND ec.status = 'APPROVED'
+        LIMIT 1
+      `,
+      [sessionUser.id],
+    );
+
+    const document = rows[0];
+
+    if (!document) {
+      return res.status(200).json({
+        success: true,
+        document: null,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      document: {
+        documentNumber: document.document_number,
+        currentVersion: document.current_version,
+        pngPath: document.png_path,
+        pdfPath: document.pdf_path,
+        generatedAt: document.generated_at,
+      },
+    });
+  } catch (error) {
+    console.error("Get employee document error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Documentul contractului nu a putut fi încărcat.",
     });
   }
 });
@@ -683,6 +753,47 @@ router.get("/admin", requireAdmin, async (_req, res) => {
   }
 });
 
+router.post("/admin/:contractId/generate", requireAdmin, async (req, res) => {
+  try {
+    const contractId = Number(req.params.contractId);
+    const sessionUser = req.session.user;
+
+    if (!Number.isInteger(contractId) || contractId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "ID-ul contractului nu este valid.",
+      });
+    }
+
+    if (!sessionUser) {
+      return res.status(401).json({
+        success: false,
+        message: "Nu ești autentificat.",
+      });
+    }
+
+    const result = await generateEmployeeContract(contractId, sessionUser.id);
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Generate contract error:", error);
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Contractul nu a putut fi generat.";
+
+    return res.status(500).json({
+      success: false,
+      message,
+    });
+  }
+});
+
 router.get("/admin/pending-count", requireAdmin, async (_req, res) => {
   try {
     interface PendingContractsCountRow extends RowDataPacket {
@@ -997,6 +1108,64 @@ router.post("/admin/:contractId/reject", requireAdmin, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Eroare internă la respingerea contractului.",
+    });
+  }
+});
+
+router.get("/admin/:contractId/document", requireAdmin, async (req, res) => {
+  try {
+    const contractId = Number(req.params.contractId);
+
+    if (!Number.isInteger(contractId) || contractId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "ID-ul contractului nu este valid.",
+      });
+    }
+
+    const [rows] = await db.query<GeneratedContractRow[]>(
+      `
+          SELECT
+            ed.document_number,
+            ed.current_version,
+            edv.png_path,
+            edv.pdf_path,
+            edv.generated_at
+          FROM employee_documents ed
+          INNER JOIN employee_document_versions edv
+            ON edv.document_id = ed.id
+            AND edv.version_number = ed.current_version
+          WHERE ed.contract_id = ?
+          LIMIT 1
+        `,
+      [contractId],
+    );
+
+    const document = rows[0];
+
+    if (!document) {
+      return res.status(200).json({
+        success: true,
+        document: null,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      document: {
+        documentNumber: document.document_number,
+        currentVersion: document.current_version,
+        pngPath: document.png_path,
+        pdfPath: document.pdf_path,
+        generatedAt: document.generated_at,
+      },
+    });
+  } catch (error) {
+    console.error("Get generated contract error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Documentul generat nu a putut fi încărcat.",
     });
   }
 });

@@ -26,6 +26,8 @@ if (!SESSION_SECRET) {
 
 app.use(express.json());
 
+const PORT = Number(process.env.API_PORT) || 5000;
+
 app.use(express.urlencoded({ extended: true }));
 
 app.use(
@@ -38,6 +40,11 @@ app.use(
 app.use(
   "/contract-images",
   express.static(path.join(process.cwd(), "public", "contract-images")),
+);
+
+app.use(
+  "/generated-contracts",
+  express.static(path.join(process.cwd(), "public", "generated-contracts")),
 );
 
 app.use(
@@ -135,10 +142,8 @@ async function startServer() {
 
     console.log("✅ Database connected successfully.");
 
-    app.listen(() => {
-      console.log(
-        `🚀 Express API running on ${process.env.NEXT_PUBLIC_API_URL}`,
-      );
+    app.listen(PORT, () => {
+      console.log(`🚀 Express API running on http://localhost:${PORT}`);
 
       void cleanupExpiredNotifications();
 

@@ -1,7 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { ArrowLeft, FileText } from "lucide-react";
+import {
+  ArrowLeft,
+  Download,
+  Eye,
+  FilePlus2,
+  FileText,
+  RefreshCw,
+} from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
@@ -51,6 +58,29 @@ interface ContractResponse {
 interface ContractActionResponse {
   success: boolean;
   message?: string;
+}
+
+interface GeneratedContractDocument {
+  documentNumber: string;
+  currentVersion: number;
+  pngPath: string;
+  pdfPath: string;
+  generatedAt: string;
+}
+
+interface GeneratedContractResponse {
+  success: boolean;
+  document: GeneratedContractDocument | null;
+  message?: string;
+}
+
+interface GenerateContractResponse {
+  success: boolean;
+  message?: string;
+  documentNumber?: string;
+  versionNumber?: number;
+  pngPath?: string;
+  pdfPath?: string;
 }
 
 const API_URL = "http://localhost:5000";
@@ -125,6 +155,14 @@ export default function AdminContractDetailsPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [isApproving, setIsApproving] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
+  const [generatedDocument, setGeneratedDocument] =
+    useState<GeneratedContractDocument | null>(null);
+
+  const [isLoadingDocument, setIsLoadingDocument] = useState(true);
+  const [isGeneratingDocument, setIsGeneratingDocument] = useState(false);
+
+  const [documentErrorMessage, setDocumentErrorMessage] = useState("");
+  const [documentSuccessMessage, setDocumentSuccessMessage] = useState("");
 
   const loadContract = useCallback(async () => {
     try {
@@ -154,15 +192,38 @@ export default function AdminContractDetailsPage() {
     }
   }, [params.id]);
 
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      void loadContract();
-    }, 0);
+  const loadGeneratedDocument = useCallback(async () => {
+    try {
+      setIsLoadingDocument(true);
+      setDocumentErrorMessage("");
 
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [loadContract]);
+      const response = await fetch(
+        `${API_URL}/contracts/admin/${params.id}/document`,
+        {
+          method: "GET",
+          credentials: "include",
+        },
+      );
+
+      const data = (await response.json()) as GeneratedContractResponse;
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message ?? "Documentul generat nu a putut fi încărcat.",
+        );
+      }
+
+      setGeneratedDocument(data.document);
+    } catch (error) {
+      setDocumentErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "A apărut o eroare la încărcarea documentului.",
+      );
+    } finally {
+      setIsLoadingDocument(false);
+    }
+  }, [params.id]);
 
   async function handleApproveContract() {
     try {
@@ -228,10 +289,56 @@ export default function AdminContractDetailsPage() {
     }
   }
 
+  async function handleGenerateContract() {
+    try {
+      setIsGeneratingDocument(true);
+      setDocumentErrorMessage("");
+      setDocumentSuccessMessage("");
+
+      const response = await fetch(
+        `${API_URL}/contracts/admin/${params.id}/generate`,
+        {
+          method: "POST",
+          credentials: "include",
+        },
+      );
+
+      const data = (await response.json()) as GenerateContractResponse;
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message ?? "Contractul nu a putut fi generat.");
+      }
+
+      setDocumentSuccessMessage(
+        data.message ?? "Contractul a fost generat cu succes.",
+      );
+
+      await loadGeneratedDocument();
+    } catch (error) {
+      setDocumentErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "A apărut o eroare la generarea contractului.",
+      );
+    } finally {
+      setIsGeneratingDocument(false);
+    }
+  }
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      void Promise.all([loadContract(), loadGeneratedDocument()]);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [loadContract, loadGeneratedDocument]);
+
   return (
     <AppShell backgroundImage="/img/business-image.png">
       <div className="p-8">
-        <div className="mx-auto max-w-6xl">
+        <div className="mx-auto w-full">
           <button
             type="button"
             onClick={() => router.push("/afacere/contracte")}
@@ -388,6 +495,159 @@ export default function AdminContractDetailsPage() {
                         </p>
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {contract.status === "APPROVED" && (
+                  <div className="mt-8 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-6">
+                    <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
+                      <div>
+                        <div className="flex items-center gap-3">
+                          <FileText size={21} className="text-amber-400" />
+
+                          <h2 className="text-lg font-semibold text-white">
+                            Contract individual de muncă
+                          </h2>
+                        </div>
+
+                        <p className="mt-2 text-sm text-zinc-400">
+                          Documentul oficial al angajatului în format PNG și
+                          PDF.
+                        </p>
+                      </div>
+
+                      {generatedDocument && (
+                        <span className="inline-flex w-fit rounded-full border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-300">
+                          Versiunea {generatedDocument.currentVersion}
+                        </span>
+                      )}
+                    </div>
+
+                    {isLoadingDocument && (
+                      <div className="mt-6 rounded-xl border border-white/10 bg-black/20 p-5">
+                        <p className="text-sm text-zinc-400">
+                          Se încarcă documentul...
+                        </p>
+                      </div>
+                    )}
+
+                    {!isLoadingDocument && documentErrorMessage && (
+                      <div className="mt-6 rounded-xl border border-red-500/30 bg-red-500/10 p-5">
+                        <p className="text-sm font-medium text-red-300">
+                          {documentErrorMessage}
+                        </p>
+                      </div>
+                    )}
+
+                    {documentSuccessMessage && (
+                      <div className="mt-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5">
+                        <p className="text-sm font-medium text-emerald-300">
+                          {documentSuccessMessage}
+                        </p>
+                      </div>
+                    )}
+
+                    {!isLoadingDocument && !generatedDocument && (
+                      <div className="mt-6 rounded-xl border border-white/10 bg-black/20 p-5">
+                        <p className="text-sm text-zinc-300">
+                          Contractul a fost aprobat, dar documentul oficial nu a
+                          fost încă generat.
+                        </p>
+
+                        <button
+                          type="button"
+                          onClick={() => void handleGenerateContract()}
+                          disabled={isGeneratingDocument}
+                          className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-6 py-3 text-sm font-semibold text-amber-300 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <FilePlus2 size={18} />
+
+                          {isGeneratingDocument
+                            ? "Se generează..."
+                            : "Generează contractul"}
+                        </button>
+                      </div>
+                    )}
+
+                    {!isLoadingDocument && generatedDocument && (
+                      <div className="mt-6">
+                        <div className="grid gap-4 sm:grid-cols-3">
+                          <div className="rounded-xl border border-white/10 bg-black/20 p-5">
+                            <p className="text-xs font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+                              Număr document
+                            </p>
+
+                            <p className="mt-2 font-semibold text-white">
+                              {generatedDocument.documentNumber}
+                            </p>
+                          </div>
+
+                          <div className="rounded-xl border border-white/10 bg-black/20 p-5">
+                            <p className="text-xs font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+                              Versiune curentă
+                            </p>
+
+                            <p className="mt-2 font-semibold text-white">
+                              v{generatedDocument.currentVersion}
+                            </p>
+                          </div>
+
+                          <div className="rounded-xl border border-white/10 bg-black/20 p-5">
+                            <p className="text-xs font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+                              Generat la
+                            </p>
+
+                            <p className="mt-2 font-semibold text-white">
+                              {formatDate(generatedDocument.generatedAt)}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                          <a
+                            href={`${API_URL}${generatedDocument.pngPath}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/10 px-5 py-3 text-sm font-semibold text-blue-300 transition hover:bg-blue-500/20"
+                          >
+                            <Eye size={18} />
+                            Vizualizează PNG
+                          </a>
+
+                          <a
+                            href={`${API_URL}${generatedDocument.pdfPath}`}
+                            download
+                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-5 py-3 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
+                          >
+                            <Download size={18} />
+                            Descarcă PDF
+                          </a>
+
+                          <button
+                            type="button"
+                            onClick={() => void handleGenerateContract()}
+                            disabled={isGeneratingDocument}
+                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-5 py-3 text-sm font-semibold text-amber-300 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <RefreshCw
+                              size={18}
+                              className={
+                                isGeneratingDocument ? "animate-spin" : ""
+                              }
+                            />
+
+                            {isGeneratingDocument
+                              ? "Se regenerează..."
+                              : "Regenerează contractul"}
+                          </button>
+                        </div>
+
+                        <p className="mt-4 text-xs leading-5 text-zinc-500">
+                          Regenerarea creează o versiune nouă. Versiunile
+                          anterioare rămân salvate în istoricul documentelor.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
 
