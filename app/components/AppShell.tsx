@@ -30,10 +30,13 @@ export default function AppShell({ children, backgroundImage }: AppShellProps) {
   useEffect(() => {
     async function checkSession() {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/me`, {
-          method: "GET",
-          credentials: "include",
-        });
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/auth/me`,
+          {
+            method: "GET",
+            credentials: "include",
+          },
+        );
 
         if (!response.ok) {
           router.replace("/");
@@ -56,7 +59,7 @@ export default function AppShell({ children, backgroundImage }: AppShellProps) {
 
   if (isLoading) {
     return (
-      <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-black text-white">
+      <main className="relative flex h-screen items-center justify-center overflow-hidden bg-black text-white">
         <div
           className="absolute inset-0 bg-cover bg-center bg-no-repeat"
           style={{
@@ -82,7 +85,7 @@ export default function AppShell({ children, backgroundImage }: AppShellProps) {
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-black text-white">
+    <main className="relative h-screen overflow-hidden bg-black text-white">
       <div
         className="fixed inset-0 bg-cover bg-center bg-no-repeat"
         style={{
@@ -94,10 +97,12 @@ export default function AppShell({ children, backgroundImage }: AppShellProps) {
 
       <div className="fixed inset-0 bg-[radial-gradient(circle_at_center,transparent_10%,rgba(0,0,0,0.62)_100%)]" />
 
-      <div className="relative z-10 flex min-h-screen">
+      <div className="relative z-10 flex h-full overflow-hidden">
         <DashboardSidebar username={user.username} role={user.role} />
 
-        <section className="min-w-0 flex-1 overflow-y-auto">{children}</section>
+        <section className="h-full min-w-0 flex-1 overflow-y-auto">
+          {children}
+        </section>
       </div>
     </main>
   );

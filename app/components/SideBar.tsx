@@ -397,8 +397,8 @@ export default function DashboardSidebar({
   }
 
   return (
-    <aside className="hidden min-h-screen w-[235px] shrink-0 border-r border-white/10 bg-black/35 py-6 backdrop-blur-md md:flex md:flex-col">
-      <nav className="space-y-3">
+    <aside className="hidden h-screen w-[235px] shrink-0 border-r border-white/10 bg-black/35 py-6 backdrop-blur-md md:flex md:flex-col">
+      <nav className="min-h-0 flex-1 space-y-3 overflow-y-auto">
         {visibleSections.map((section) => {
           const SectionIcon = section.icon;
           const isOpen = openSections[section.id];
