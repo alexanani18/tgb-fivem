@@ -10,6 +10,9 @@ interface SessionUser {
   id: number;
   username: string;
   role: UserRole;
+  rank: string | null;
+  firstName: string | null;
+  lastName: string | null;
 }
 
 interface AppShellProps {
@@ -98,7 +101,13 @@ export default function AppShell({ children, backgroundImage }: AppShellProps) {
       <div className="fixed inset-0 bg-[radial-gradient(circle_at_center,transparent_10%,rgba(0,0,0,0.62)_100%)]" />
 
       <div className="relative z-10 flex h-full overflow-hidden">
-        <DashboardSidebar username={user.username} role={user.role} />
+        <DashboardSidebar
+          username={user.username}
+          role={user.role}
+          rank={user.rank}
+          firstName={user.firstName}
+          lastName={user.lastName}
+        />
 
         <section className="h-full min-w-0 flex-1 overflow-y-auto">
           {children}

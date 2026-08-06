@@ -14,6 +14,9 @@ interface UserRow extends RowDataPacket {
   username: string;
   password_hash: string;
   user_role: UserRole;
+  user_rank: string | null;
+  first_name: string | null;
+  last_name: string | null;
   is_active: number;
 }
 
@@ -42,18 +45,39 @@ router.post("/login", async (req, res) => {
 
     const [users] = await db.execute<UserRow[]>(
       `
-        SELECT
-          u.id,
-          u.username,
-          u.password_hash,
-          ur.name AS user_role,
-          u.is_active
-        FROM users u
-        INNER JOIN user_roles ur
-          ON ur.id = u.user_role_id
-        WHERE u.username = ?
+    SELECT
+      u.id,
+      u.username,
+      u.password_hash,
+      ur.name AS user_role,
+      usr.name AS user_rank,
+      ec.first_name,
+      ec.last_name,
+      u.is_active
+    FROM users u
+    INNER JOIN user_roles ur
+      ON ur.id = u.user_role_id
+    LEFT JOIN user_ranks usr
+      ON usr.id = u.user_rank_id
+    LEFT JOIN employee_contracts ec
+      ON ec.id = (
+        SELECT ec2.id
+        FROM employee_contracts ec2
+        WHERE ec2.user_id = u.id
+        ORDER BY
+          CASE
+            WHEN ec2.status = 'APPROVED' THEN 0
+            WHEN ec2.status = 'PENDING_REVIEW' THEN 1
+            WHEN ec2.status = 'DRAFT' THEN 2
+            ELSE 3
+          END,
+          ec2.updated_at DESC,
+          ec2.id DESC
         LIMIT 1
-      `,
+      )
+    WHERE u.username = ?
+    LIMIT 1
+  `,
       [username.trim()],
     );
 
@@ -86,6 +110,9 @@ router.post("/login", async (req, res) => {
       id: user.id,
       username: user.username,
       role: user.user_role,
+      rank: user.user_rank,
+      firstName: user.first_name,
+      lastName: user.last_name,
     };
 
     return res.status(200).json({
@@ -95,6 +122,9 @@ router.post("/login", async (req, res) => {
         id: user.id,
         username: user.username,
         role: user.user_role,
+        rank: user.user_rank,
+        firstName: user.first_name,
+        lastName: user.last_name,
       },
     });
   } catch (error) {
@@ -178,6 +208,7 @@ router.patch("/schimbare-parola", async (req, res) => {
           u.username,
           u.password_hash,
           ur.name AS user_role,
+          NULL AS user_rank,
           u.is_active
         FROM users u
         INNER JOIN user_roles ur
