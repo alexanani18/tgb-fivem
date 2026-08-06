@@ -60,6 +60,36 @@ interface EmployeeUserRow extends RowDataPacket {
   created_at: Date;
 }
 
+interface ArchiveUserRow extends RowDataPacket {
+  id: number;
+
+  username: string;
+
+  first_name: string | null;
+  last_name: string | null;
+
+  iban: string | number | null;
+  phone_number: string | null;
+  ci_series: string | null;
+  city_hours: string | number | null;
+
+  employee_rank: string | null;
+
+  employee_status: EmployeeStatus | null;
+
+  meeting_attendance: number | null;
+  has_uniform: number | null;
+  has_car: number | null;
+
+  observations: string | null;
+  discord_id: string | null;
+
+  created_at: Date;
+
+  website_role: UserRole;
+  is_active: number;
+}
+
 interface EmployeeExistsRow extends RowDataPacket {
   id: number;
 }
@@ -373,6 +403,108 @@ router.get("/", requireAdmin, async (_req, res) => {
     return res.status(500).json({
       success: false,
       message: "Eroare internă la încărcarea angajaților.",
+    });
+  }
+});
+
+/*
+|--------------------------------------------------------------------------
+| GET /users/archive
+|--------------------------------------------------------------------------
+*/
+
+router.get("/archive", requireAdmin, async (_req, res) => {
+  try {
+    const [users] = await db.execute<ArchiveUserRow[]>(
+      `
+        SELECT
+          u.id,
+          u.username,
+          u.is_active,
+
+          ur.name AS website_role,
+
+          COALESCE(ec.first_name, NULL) AS first_name,
+          COALESCE(ec.last_name, NULL) AS last_name,
+
+          ec.game_id AS iban,
+          ec.phone_number,
+          ec.ci_series,
+          ec.city_hours,
+
+          rk.name AS employee_rank,
+
+          ed.status AS employee_status,
+          ed.meeting_attendance,
+          ed.has_uniform,
+          ed.has_car,
+          ed.observations,
+          ed.discord_id,
+
+          u.created_at
+
+        FROM users u
+
+        INNER JOIN user_roles ur
+          ON ur.id = u.user_role_id
+
+        LEFT JOIN user_ranks rk
+          ON rk.id = u.user_rank_id
+
+        LEFT JOIN employee_contracts ec
+          ON ec.user_id = u.id
+
+        LEFT JOIN employee_details ed
+          ON ed.user_id = u.id
+
+        WHERE
+          ur.name = 'GUEST'
+          OR ed.status = 'DEMISIONAT'
+          OR u.is_active = 0
+
+        ORDER BY
+          u.created_at DESC
+      `,
+    );
+
+    return res.status(200).json({
+      success: true,
+
+      users: users.map((user) => ({
+        id: user.id,
+
+        firstName: user.first_name ?? user.username,
+        lastName: user.last_name ?? "",
+
+        iban: user.iban ?? "—",
+
+        phoneNumber: user.phone_number ?? "—",
+        ciSeries: user.ci_series ?? "—",
+        cityHours: user.city_hours ?? "—",
+
+        rank: user.employee_rank ?? "—",
+
+        status: user.employee_status,
+
+        meetingAttendance: Boolean(user.meeting_attendance),
+        hasUniform: Boolean(user.has_uniform),
+        hasCar: Boolean(user.has_car),
+
+        observations: user.observations ?? "",
+        discordId: user.discord_id ?? "",
+
+        createdAt: user.created_at,
+
+        websiteRole: user.website_role,
+        isActive: Boolean(user.is_active),
+      })),
+    });
+  } catch (error) {
+    console.error("Get archive employees error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Arhiva nu a putut fi încărcată.",
     });
   }
 });
