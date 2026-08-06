@@ -871,6 +871,106 @@ router.post("/admin/:contractId/generate", requireAdmin, async (req, res) => {
       });
     }
 
+    const requestBody = req.body ?? {};
+
+    const hasSettingsUpdate =
+      requestBody.workSchedule !== undefined ||
+      requestBody.contractType !== undefined ||
+      requestBody.contractEndDate !== undefined;
+
+    if (hasSettingsUpdate) {
+      const workSchedule =
+        typeof requestBody.workSchedule === "string"
+          ? requestBody.workSchedule.trim()
+          : "";
+
+      const contractType =
+        requestBody.contractType === "FIXED"
+          ? "FIXED"
+          : requestBody.contractType === "UNLIMITED"
+            ? "UNLIMITED"
+            : null;
+
+      const contractEndDate =
+        typeof requestBody.contractEndDate === "string" &&
+        requestBody.contractEndDate.trim()
+          ? requestBody.contractEndDate.trim()
+          : null;
+
+      if (!workSchedule) {
+        return res.status(400).json({
+          success: false,
+          message: "Programul de lucru este obligatoriu.",
+        });
+      }
+
+      if (workSchedule.length > 50) {
+        return res.status(400).json({
+          success: false,
+          message: "Programul de lucru poate avea maximum 50 de caractere.",
+        });
+      }
+
+      if (!contractType) {
+        return res.status(400).json({
+          success: false,
+          message: "Tipul contractului nu este valid.",
+        });
+      }
+
+      if (contractType === "FIXED") {
+        if (
+          !contractEndDate ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(contractEndDate) ||
+          Number.isNaN(new Date(`${contractEndDate}T00:00:00`).getTime())
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Data expirării este obligatorie pentru contractul determinat.",
+          });
+        }
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const parsedEndDate = new Date(`${contractEndDate}T00:00:00`);
+
+        if (parsedEndDate < today) {
+          return res.status(400).json({
+            success: false,
+            message: "Data expirării nu poate fi în trecut.",
+          });
+        }
+      }
+
+      const [updateResult] = await db.execute<ResultSetHeader>(
+        `
+          UPDATE employee_contracts
+          SET
+            work_schedule = ?,
+            contract_type = ?,
+            contract_end_date = ?
+          WHERE id = ?
+            AND status = 'APPROVED'
+        `,
+        [
+          workSchedule,
+          contractType,
+          contractType === "FIXED" ? contractEndDate : null,
+          contractId,
+        ],
+      );
+
+      if (updateResult.affectedRows === 0) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "Contractul nu există sau nu este aprobat și nu poate fi regenerat.",
+        });
+      }
+    }
+
     const result = await generateEmployeeContract(contractId, sessionUser.id);
 
     if (!result.success) {
