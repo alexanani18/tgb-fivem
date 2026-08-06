@@ -1,5 +1,4 @@
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
-
 import { db } from "../db";
 
 export interface NotificationRow extends RowDataPacket {
@@ -328,4 +327,176 @@ export async function deleteNotification(
   );
 
   return result.affectedRows > 0;
+}
+
+export interface ExpiredNotificationRow extends RowDataPacket {
+  id: number;
+}
+
+export interface SubmissionFileRow extends RowDataPacket {
+  file_path: string;
+}
+
+export interface CleanupExpiredNotificationsResult {
+  notificationIds: number[];
+  submissionFiles: SubmissionFileRow[];
+}
+
+export async function cleanupExpiredNotifications(): Promise<CleanupExpiredNotificationsResult | null> {
+  const [expiredNotifications] = await db.execute<ExpiredNotificationRow[]>(
+    `
+      SELECT
+        notification.id
+      FROM notifications notification
+      WHERE notification.created_at <= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+        AND NOT EXISTS (
+          SELECT 1
+          FROM notification_images notification_image
+
+          INNER JOIN notification_image_submissions submission
+            ON submission.notification_image_id =
+              notification_image.id
+
+          WHERE notification_image.notification_id = notification.id
+            AND submission.status IN ('PENDING', 'APPROVED')
+        )
+    `,
+  );
+
+  if (expiredNotifications.length === 0) {
+    return null;
+  }
+
+  const notificationIds = expiredNotifications.map(
+    (notification) => notification.id,
+  );
+
+  const placeholders = notificationIds.map(() => "?").join(", ");
+
+  const connection = await db.getConnection();
+
+  let submissionFiles: SubmissionFileRow[] = [];
+
+  try {
+    await connection.beginTransaction();
+
+    const [fileRows] = await connection.query<SubmissionFileRow[]>(
+      `
+        SELECT
+          submission.file_path
+        FROM notification_image_submissions submission
+
+        INNER JOIN notification_images notification_image
+          ON notification_image.id =
+            submission.notification_image_id
+
+        WHERE notification_image.notification_id
+          IN (${placeholders})
+      `,
+      notificationIds,
+    );
+
+    submissionFiles = fileRows;
+
+    await connection.query(
+      `
+        DELETE submission
+        FROM notification_image_submissions submission
+
+        INNER JOIN notification_images notification_image
+          ON notification_image.id =
+            submission.notification_image_id
+
+        WHERE notification_image.notification_id
+          IN (${placeholders})
+      `,
+      notificationIds,
+    );
+
+    await connection.query(
+      `
+        DELETE FROM notification_images
+        WHERE notification_id IN (${placeholders})
+      `,
+      notificationIds,
+    );
+
+    await connection.query(
+      `
+        DELETE FROM notifications
+        WHERE id IN (${placeholders})
+      `,
+      notificationIds,
+    );
+
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+
+  return {
+    notificationIds,
+    submissionFiles,
+  };
+}
+
+export async function createNotification(
+  recipientId: number,
+  createdBy: number,
+  title: string,
+  message: string,
+  selectedImages: string[],
+): Promise<NotificationWithImages | null> {
+  const connection = await db.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    const [insertResult] = await connection.execute<ResultSetHeader>(
+      `
+        INSERT INTO notifications (
+          recipient_id,
+          created_by,
+          title,
+          message
+        )
+        VALUES (?, ?, ?, ?)
+      `,
+      [recipientId, createdBy, title, message],
+    );
+
+    for (
+      let imageIndex = 0;
+      imageIndex < selectedImages.length;
+      imageIndex += 1
+    ) {
+      await connection.execute<ResultSetHeader>(
+        `
+          INSERT INTO notification_images (
+            notification_id,
+            image_path,
+            position
+          )
+          VALUES (?, ?, ?)
+        `,
+        [
+          insertResult.insertId,
+          selectedImages[imageIndex],
+          imageIndex + 1,
+        ],
+      );
+    }
+
+    await connection.commit();
+
+    return getNotificationById(insertResult.insertId);
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }

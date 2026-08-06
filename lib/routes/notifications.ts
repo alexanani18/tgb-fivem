@@ -7,9 +7,6 @@ import {
   type Request,
   type Response,
 } from "express";
-import { type ResultSetHeader } from "mysql2";
-
-import { db } from "../db";
 
 import * as notificationsDatabase from "../database/notifications";
 
@@ -350,62 +347,21 @@ router.post("/", requireAdmin, async (req: Request, res: Response) => {
     const selectedImages = includeImages
       ? await selectRandomNotificationImages()
       : [];
+    const notification = await notificationsDatabase.createNotification(
+      recipientId,
+      sessionUser.id,
+      title,
+      message,
+      selectedImages,
+    );
 
-    const connection = await db.getConnection();
-
-    try {
-      await connection.beginTransaction();
-
-      const [insertResult] = await connection.execute<ResultSetHeader>(
-        `
-            INSERT INTO notifications (
-              recipient_id,
-              created_by,
-              title,
-              message
-            )
-            VALUES (?, ?, ?, ?)
-          `,
-        [recipientId, sessionUser.id, title, message],
-      );
-
-      for (
-        let imageIndex = 0;
-        imageIndex < selectedImages.length;
-        imageIndex += 1
-      ) {
-        await connection.execute<ResultSetHeader>(
-          `
-            INSERT INTO notification_images (
-              notification_id,
-              image_path,
-              position
-            )
-            VALUES (?, ?, ?)
-          `,
-          [insertResult.insertId, selectedImages[imageIndex], imageIndex + 1],
-        );
-      }
-
-      await connection.commit();
-
-      const notification =
-        await notificationsDatabase.getNotificationById(insertResult.insertId);
-
-      return res.status(201).json({
-        success: true,
-        message: includeImages
-          ? "Notificarea și cele 4 imagini au fost trimise."
-          : "Notificarea a fost trimisă.",
-        notification,
-      });
-    } catch (error) {
-      await connection.rollback();
-
-      throw error;
-    } finally {
-      connection.release();
-    }
+    return res.status(201).json({
+      success: true,
+      message: includeImages
+        ? "Notificarea și cele 4 imagini au fost trimise."
+        : "Notificarea a fost trimisă.",
+      notification,
+    });
   } catch (error) {
     console.error("❌ Failed to create notification:", error);
 

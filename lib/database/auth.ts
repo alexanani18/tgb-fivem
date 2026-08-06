@@ -42,9 +42,7 @@ export async function findByUsername(
   return findUser("username", username);
 }
 
-export async function findById(
-  id: number,
-): Promise<AuthUserRow | null> {
+export async function findById(id: number): Promise<AuthUserRow | null> {
   return findUser("id", id);
 }
 
