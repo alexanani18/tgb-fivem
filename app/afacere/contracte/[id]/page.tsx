@@ -3,11 +3,15 @@
 import Image from "next/image";
 import {
   ArrowLeft,
+  CalendarDays,
+  Check,
+  Clock3,
   Download,
   Eye,
   FilePlus2,
   FileText,
   RefreshCw,
+  X,
 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -20,6 +24,18 @@ type ContractStatus =
   | "APPROVED"
   | "REJECTED"
   | "BLOCKED";
+
+type ContractType = "UNLIMITED" | "FIXED";
+type ScheduleMode = "DEFAULT" | "CUSTOM";
+
+interface Rank {
+  id: number;
+  name: string;
+  salary: number;
+  salary_type: "PUBLIC" | "CONFIDENTIAL";
+  sort_order: number;
+  users_count: number;
+}
 
 interface ContractData {
   id: number;
@@ -44,6 +60,9 @@ interface ContractData {
   approvedByName: string | null;
   adminSignaturePath: string | null;
   approvedAt: string | null;
+  workSchedule: string | null;
+  contractType: ContractType | null;
+  contractEndDate: string | null;
   rejectedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -57,6 +76,12 @@ interface ContractResponse {
 
 interface ContractActionResponse {
   success: boolean;
+  message?: string;
+}
+
+interface RanksResponse {
+  success: boolean;
+  ranks?: Rank[];
   message?: string;
 }
 
@@ -83,7 +108,7 @@ interface GenerateContractResponse {
   pdfPath?: string;
 }
 
-const API_URL = "http://localhost:5000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
 function formatDate(dateValue: string | null): string {
   if (!dateValue) {
@@ -155,6 +180,15 @@ export default function AdminContractDetailsPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [isApproving, setIsApproving] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
+
+  const [ranks, setRanks] = useState<Rank[]>([]);
+  const [isLoadingRanks, setIsLoadingRanks] = useState(false);
+  const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false);
+  const [selectedRankId, setSelectedRankId] = useState("");
+  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("DEFAULT");
+  const [customWorkSchedule, setCustomWorkSchedule] = useState("");
+  const [contractType, setContractType] = useState<ContractType>("UNLIMITED");
+  const [contractEndDate, setContractEndDate] = useState("");
   const [generatedDocument, setGeneratedDocument] =
     useState<GeneratedContractDocument | null>(null);
 
@@ -225,7 +259,101 @@ export default function AdminContractDetailsPage() {
     }
   }, [params.id]);
 
+  const loadRanks = useCallback(async () => {
+    try {
+      setIsLoadingRanks(true);
+
+      const response = await fetch(`${API_URL}/ranks/admin`, {
+        method: "GET",
+        credentials: "include",
+      });
+
+      const data = (await response.json()) as RanksResponse;
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message ?? "Rank-urile nu au putut fi încărcate.");
+      }
+
+      const sortedRanks = [...(data.ranks ?? [])].sort(
+        (firstRank, secondRank) =>
+          firstRank.sort_order - secondRank.sort_order ||
+          firstRank.name.localeCompare(secondRank.name, "ro"),
+      );
+
+      setRanks(sortedRanks);
+
+      if (!selectedRankId && sortedRanks.length > 0) {
+        const defaultCrewRank = sortedRanks.find(
+          (rank) => rank.name.trim().toLowerCase() === "blackfold crew",
+        );
+
+        setSelectedRankId(String(defaultCrewRank?.id ?? sortedRanks[0].id));
+      }
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "A apărut o eroare la încărcarea rank-urilor.",
+      );
+    } finally {
+      setIsLoadingRanks(false);
+    }
+  }, [selectedRankId]);
+
+  function openApprovalModal() {
+    setErrorMessage("");
+    setScheduleMode("DEFAULT");
+    setCustomWorkSchedule("");
+    setContractType("UNLIMITED");
+    setContractEndDate("");
+    setIsApprovalModalOpen(true);
+
+    if (ranks.length === 0) {
+      void loadRanks();
+    } else if (!selectedRankId) {
+      const defaultCrewRank = ranks.find(
+        (rank) => rank.name.trim().toLowerCase() === "blackfold crew",
+      );
+
+      setSelectedRankId(String(defaultCrewRank?.id ?? ranks[0].id));
+    }
+  }
+
+  function closeApprovalModal() {
+    if (isApproving) {
+      return;
+    }
+
+    setIsApprovalModalOpen(false);
+  }
+
   async function handleApproveContract() {
+    const rankId = Number(selectedRankId);
+    const workSchedule =
+      scheduleMode === "DEFAULT" ? "17:00 - 00:00" : customWorkSchedule.trim();
+
+    if (!Number.isInteger(rankId) || rankId <= 0) {
+      setErrorMessage("Selectează rank-ul angajatului.");
+      return;
+    }
+
+    if (!workSchedule) {
+      setErrorMessage("Completează programul de lucru.");
+      return;
+    }
+
+    if (workSchedule.length > 50) {
+      setErrorMessage("Programul de lucru poate avea maximum 50 de caractere.");
+      return;
+    }
+
+    if (contractType === "FIXED" && !contractEndDate) {
+      setErrorMessage(
+        "Selectează data expirării pentru contractul pe perioadă determinată.",
+      );
+      return;
+    }
+
     try {
       setIsApproving(true);
       setErrorMessage("");
@@ -234,7 +362,16 @@ export default function AdminContractDetailsPage() {
         `${API_URL}/contracts/admin/${params.id}/approve`,
         {
           method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
           credentials: "include",
+          body: JSON.stringify({
+            rankId,
+            workSchedule,
+            contractType,
+            contractEndDate: contractType === "FIXED" ? contractEndDate : null,
+          }),
         },
       );
 
@@ -244,6 +381,7 @@ export default function AdminContractDetailsPage() {
         throw new Error(data.message ?? "Contractul nu a putut fi aprobat.");
       }
 
+      setIsApprovalModalOpen(false);
       await loadContract();
       window.dispatchEvent(new Event("contracts-updated"));
     } catch (error) {
@@ -494,6 +632,42 @@ export default function AdminContractDetailsPage() {
                           {formatDate(contract.approvedAt)}
                         </p>
                       </div>
+
+                      <div className="rounded-xl border border-white/10 bg-black/20 p-5">
+                        <p className="text-xs font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+                          Program
+                        </p>
+
+                        <p className="mt-2 font-medium text-white">
+                          {contract.workSchedule ?? "—"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-white/10 bg-black/20 p-5">
+                        <p className="text-xs font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+                          Tip contract
+                        </p>
+
+                        <p className="mt-2 font-medium text-white">
+                          {contract.contractType === "FIXED"
+                            ? "Determinat"
+                            : contract.contractType === "UNLIMITED"
+                              ? "Nedeterminat"
+                              : "—"}
+                        </p>
+                      </div>
+
+                      {contract.contractType === "FIXED" && (
+                        <div className="rounded-xl border border-white/10 bg-black/20 p-5">
+                          <p className="text-xs font-semibold tracking-[0.14em] text-zinc-500 uppercase">
+                            Data expirării
+                          </p>
+
+                          <p className="mt-2 font-medium text-white">
+                            {formatDate(contract.contractEndDate)}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -703,7 +877,7 @@ export default function AdminContractDetailsPage() {
 
                     <button
                       type="button"
-                      onClick={() => void handleApproveContract()}
+                      onClick={openApprovalModal}
                       disabled={isApproving || isRejecting}
                       className="inline-flex items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-6 py-3 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -716,6 +890,248 @@ export default function AdminContractDetailsPage() {
           )}
         </div>
       </div>
+      {isApprovalModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 px-4 py-8 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeApprovalModal();
+            }
+          }}
+        >
+          <section className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-emerald-500/25 bg-zinc-950 shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-5 sm:px-6">
+              <div>
+                <p className="text-xs font-semibold tracking-[0.16em] text-emerald-400 uppercase">
+                  Aprobare contract
+                </p>
+
+                <h2 className="mt-2 text-xl font-bold text-white">
+                  Configurează angajarea
+                </h2>
+
+                <p className="mt-1 text-sm text-zinc-400">
+                  Selectează rank-ul, programul și perioada contractului.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeApprovalModal}
+                disabled={isApproving}
+                className="rounded-xl border border-zinc-800 bg-zinc-900 p-2 text-zinc-400 transition hover:border-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Închide fereastra"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-6 px-5 py-6 sm:px-6">
+              <div>
+                <label
+                  htmlFor="approval-rank"
+                  className="mb-2 block text-xs font-semibold tracking-wide text-zinc-400 uppercase"
+                >
+                  Rank
+                </label>
+
+                <select
+                  id="approval-rank"
+                  value={selectedRankId}
+                  onChange={(event) => setSelectedRankId(event.target.value)}
+                  disabled={isApproving || isLoadingRanks}
+                  className="h-12 w-full rounded-xl border border-zinc-800 bg-black px-4 text-sm text-white outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isLoadingRanks && (
+                    <option value="">Se încarcă rank-urile...</option>
+                  )}
+
+                  {!isLoadingRanks && ranks.length === 0 && (
+                    <option value="">Nu există rank-uri disponibile</option>
+                  )}
+
+                  {ranks.map((rank) => (
+                    <option key={rank.id} value={rank.id}>
+                      {rank.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div className="mb-3 flex items-center gap-2">
+                  <Clock3 size={18} className="text-emerald-400" />
+
+                  <p className="text-sm font-semibold text-white">
+                    Program de lucru
+                  </p>
+                </div>
+
+                <div className="grid gap-3">
+                  <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-black/30 p-4 transition hover:border-emerald-500/30">
+                    <input
+                      type="radio"
+                      name="schedule-mode"
+                      value="DEFAULT"
+                      checked={scheduleMode === "DEFAULT"}
+                      onChange={() => setScheduleMode("DEFAULT")}
+                      disabled={isApproving}
+                      className="mt-1 accent-emerald-500"
+                    />
+
+                    <span>
+                      <span className="block font-medium text-white">
+                        Program implicit
+                      </span>
+
+                      <span className="mt-1 block text-sm text-zinc-400">
+                        17:00 - 00:00
+                      </span>
+                    </span>
+                  </label>
+
+                  <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-black/30 p-4 transition hover:border-emerald-500/30">
+                    <input
+                      type="radio"
+                      name="schedule-mode"
+                      value="CUSTOM"
+                      checked={scheduleMode === "CUSTOM"}
+                      onChange={() => setScheduleMode("CUSTOM")}
+                      disabled={isApproving}
+                      className="mt-1 accent-emerald-500"
+                    />
+
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-medium text-white">
+                        Program personalizat
+                      </span>
+
+                      <input
+                        type="text"
+                        value={customWorkSchedule}
+                        onChange={(event) =>
+                          setCustomWorkSchedule(event.target.value)
+                        }
+                        onFocus={() => setScheduleMode("CUSTOM")}
+                        maxLength={50}
+                        placeholder="Ex: 18:00 - 01:00"
+                        disabled={isApproving || scheduleMode !== "CUSTOM"}
+                        className="mt-3 h-11 w-full rounded-xl border border-zinc-800 bg-black px-4 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      />
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-3 flex items-center gap-2">
+                  <CalendarDays size={18} className="text-emerald-400" />
+
+                  <p className="text-sm font-semibold text-white">
+                    Perioada contractului
+                  </p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-black/30 p-4 transition hover:border-emerald-500/30">
+                    <input
+                      type="radio"
+                      name="contract-type"
+                      value="UNLIMITED"
+                      checked={contractType === "UNLIMITED"}
+                      onChange={() => {
+                        setContractType("UNLIMITED");
+                        setContractEndDate("");
+                      }}
+                      disabled={isApproving}
+                      className="mt-1 accent-emerald-500"
+                    />
+
+                    <span>
+                      <span className="block font-medium text-white">
+                        Nedeterminat
+                      </span>
+
+                      <span className="mt-1 block text-xs text-zinc-500">
+                        Fără dată de expirare
+                      </span>
+                    </span>
+                  </label>
+
+                  <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-black/30 p-4 transition hover:border-emerald-500/30">
+                    <input
+                      type="radio"
+                      name="contract-type"
+                      value="FIXED"
+                      checked={contractType === "FIXED"}
+                      onChange={() => setContractType("FIXED")}
+                      disabled={isApproving}
+                      className="mt-1 accent-emerald-500"
+                    />
+
+                    <span>
+                      <span className="block font-medium text-white">
+                        Determinat
+                      </span>
+
+                      <span className="mt-1 block text-xs text-zinc-500">
+                        Necesită dată de expirare
+                      </span>
+                    </span>
+                  </label>
+                </div>
+
+                {contractType === "FIXED" && (
+                  <label className="mt-4 block">
+                    <span className="mb-2 block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+                      Data expirării
+                    </span>
+
+                    <input
+                      type="date"
+                      value={contractEndDate}
+                      onChange={(event) =>
+                        setContractEndDate(event.target.value)
+                      }
+                      min={new Date().toISOString().split("T")[0]}
+                      disabled={isApproving}
+                      className="h-12 w-full rounded-xl border border-zinc-800 bg-black px-4 text-sm text-white outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                    />
+                  </label>
+                )}
+              </div>
+
+              {errorMessage && (
+                <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-300">
+                  {errorMessage}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col-reverse gap-3 border-t border-white/10 bg-black/30 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+              <button
+                type="button"
+                onClick={closeApprovalModal}
+                disabled={isApproving}
+                className="inline-flex h-11 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900 px-5 text-sm font-semibold text-zinc-200 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Anulează
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleApproveContract()}
+                disabled={isApproving || isLoadingRanks || ranks.length === 0}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Check size={18} />
+
+                {isApproving ? "Se aprobă..." : "Aprobă contractul"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </AppShell>
   );
 }

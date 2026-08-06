@@ -88,6 +88,8 @@ type ContractStatus =
   | "REJECTED"
   | "BLOCKED";
 
+type ContractType = "UNLIMITED" | "FIXED";
+
 interface ContractRow extends RowDataPacket {
   id: number;
   user_id: number;
@@ -108,6 +110,9 @@ interface ContractRow extends RowDataPacket {
   approved_by_name: string | null;
   admin_signature_path: string | null;
   approved_at: Date | null;
+  work_schedule: string | null;
+  contract_type: ContractType | null;
+  contract_end_date: Date | string | null;
   created_at: Date;
   updated_at: Date;
   rejected_by_user_id: number | null;
@@ -136,6 +141,9 @@ interface AdminContractListRow extends RowDataPacket {
   approved_by_name: string | null;
   admin_signature_path: string | null;
   approved_at: Date | null;
+  work_schedule: string | null;
+  contract_type: ContractType | null;
+  contract_end_date: Date | string | null;
   created_at: Date;
   updated_at: Date;
   rejected_by_user_id: number | null;
@@ -222,6 +230,9 @@ router.get("/me", requireAuth, async (req, res) => {
           ) AS approved_by_name,
           ec.admin_signature_path,
           ec.approved_at,
+          ec.work_schedule,
+          ec.contract_type,
+          ec.contract_end_date,
           ec.rejected_by_user_id,
           COALESCE(
             NULLIF(
@@ -280,6 +291,9 @@ router.get("/me", requireAuth, async (req, res) => {
         approvedByName: contract.approved_by_name,
         adminSignaturePath: contract.admin_signature_path,
         approvedAt: contract.approved_at,
+        workSchedule: contract.work_schedule,
+        contractType: contract.contract_type,
+        contractEndDate: contract.contract_end_date,
         rejectedByUserId: contract.rejected_by_user_id,
         rejectedByName: contract.rejected_by_name,
         rejectedAt: contract.rejected_at,
@@ -610,6 +624,9 @@ router.post(
               approved_by_name = NULL,
               admin_signature_path = NULL,
               approved_at = NULL,
+              work_schedule = NULL,
+              contract_type = NULL,
+              contract_end_date = NULL,
               rejected_by_user_id = NULL,
               rejected_at = NULL
             WHERE id = ?
@@ -754,6 +771,9 @@ router.get("/admin", requireAdmin, async (_req, res) => {
           ) AS approved_by_name,
           ec.admin_signature_path,
           ec.approved_at,
+          ec.work_schedule,
+          ec.contract_type,
+          ec.contract_end_date,
           ec.rejected_by_user_id,
           COALESCE(
             NULLIF(
@@ -812,6 +832,9 @@ router.get("/admin", requireAdmin, async (_req, res) => {
         approvedByName: contract.approved_by_name,
         adminSignaturePath: contract.admin_signature_path,
         approvedAt: contract.approved_at,
+        workSchedule: contract.work_schedule,
+        contractType: contract.contract_type,
+        contractEndDate: contract.contract_end_date,
         rejectedByUserId: contract.rejected_by_user_id,
         rejectedByName: contract.rejected_by_name,
         rejectedAt: contract.rejected_at,
@@ -940,6 +963,9 @@ router.get("/admin/:contractId", requireAdmin, async (req, res) => {
           ) AS approved_by_name,
           ec.admin_signature_path,
           ec.approved_at,
+          ec.work_schedule,
+          ec.contract_type,
+          ec.contract_end_date,
           ec.rejected_by_user_id,
           COALESCE(
             NULLIF(
@@ -1000,6 +1026,9 @@ router.get("/admin/:contractId", requireAdmin, async (req, res) => {
         approvedByName: contract.approved_by_name,
         adminSignaturePath: contract.admin_signature_path,
         approvedAt: contract.approved_at,
+        workSchedule: contract.work_schedule,
+        contractType: contract.contract_type,
+        contractEndDate: contract.contract_end_date,
         rejectedByUserId: contract.rejected_by_user_id,
         rejectedByName: contract.rejected_by_name,
         rejectedAt: contract.rejected_at,
@@ -1024,6 +1053,26 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
     const contractId = Number(req.params.contractId);
     const sessionUser = req.session.user;
 
+    const rankId = Number(req.body.rankId);
+
+    const workSchedule =
+      typeof req.body.workSchedule === "string"
+        ? req.body.workSchedule.trim()
+        : "";
+
+    const contractType =
+      req.body.contractType === "FIXED"
+        ? "FIXED"
+        : req.body.contractType === "UNLIMITED"
+          ? "UNLIMITED"
+          : null;
+
+    const contractEndDate =
+      typeof req.body.contractEndDate === "string" &&
+      req.body.contractEndDate.trim()
+        ? req.body.contractEndDate.trim()
+        : null;
+
     if (!Number.isInteger(contractId) || contractId <= 0) {
       return res.status(400).json({
         success: false,
@@ -1038,12 +1087,89 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
       });
     }
 
+    if (!Number.isInteger(rankId) || rankId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Selectează un rank valid pentru angajat.",
+      });
+    }
+
+    if (!workSchedule) {
+      return res.status(400).json({
+        success: false,
+        message: "Programul de lucru este obligatoriu.",
+      });
+    }
+
+    if (workSchedule.length > 50) {
+      return res.status(400).json({
+        success: false,
+        message: "Programul de lucru poate avea maximum 50 de caractere.",
+      });
+    }
+
+    if (!contractType) {
+      return res.status(400).json({
+        success: false,
+        message: "Tipul contractului nu este valid.",
+      });
+    }
+
+    if (contractType === "FIXED") {
+      if (
+        !contractEndDate ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(contractEndDate) ||
+        Number.isNaN(new Date(`${contractEndDate}T00:00:00`).getTime())
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Data expirării este obligatorie pentru contractul determinat.",
+        });
+      }
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const parsedEndDate = new Date(`${contractEndDate}T00:00:00`);
+
+      if (parsedEndDate < today) {
+        return res.status(400).json({
+          success: false,
+          message: "Data expirării nu poate fi în trecut.",
+        });
+      }
+    }
+
     await connection.beginTransaction();
 
     interface ContractApprovalRow extends RowDataPacket {
       id: number;
       user_id: number;
       status: ContractStatus;
+    }
+
+    interface RankExistsRow extends RowDataPacket {
+      id: number;
+    }
+
+    const [rankRows] = await connection.execute<RankExistsRow[]>(
+      `
+        SELECT id
+        FROM user_ranks
+        WHERE id = ?
+        LIMIT 1
+      `,
+      [rankId],
+    );
+
+    if (!rankRows[0]) {
+      await connection.rollback();
+
+      return res.status(404).json({
+        success: false,
+        message: "Rank-ul selectat nu există.",
+      });
     }
 
     const [contracts] = await connection.execute<ContractApprovalRow[]>(
@@ -1082,22 +1208,24 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
 
     const [userResult] = await connection.execute<ResultSetHeader>(
       `
-    UPDATE users
-    SET user_role_id = (
-      SELECT id
-      FROM user_roles
-      WHERE name = 'ANGAJAT'
-      LIMIT 1
-    )
-    WHERE id = ?
-      AND user_role_id = (
-        SELECT id
-        FROM user_roles
-        WHERE name = 'GUEST'
-        LIMIT 1
-      )
-  `,
-      [contract.user_id],
+        UPDATE users
+        SET
+          user_role_id = (
+            SELECT id
+            FROM user_roles
+            WHERE name = 'ANGAJAT'
+            LIMIT 1
+          ),
+          user_rank_id = ?
+        WHERE id = ?
+          AND user_role_id = (
+            SELECT id
+            FROM user_roles
+            WHERE name = 'GUEST'
+            LIMIT 1
+          )
+      `,
+      [rankId, contract.user_id],
     );
 
     if (userResult.affectedRows === 0) {
@@ -1124,12 +1252,22 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
           approved_by_user_id = ?,
           approved_by_name = ?,
           approved_at = CURRENT_TIMESTAMP,
+          work_schedule = ?,
+          contract_type = ?,
+          contract_end_date = ?,
           rejected_by_user_id = NULL,
           rejected_at = NULL,
           admin_signature_path = NULL
         WHERE id = ?
       `,
-      [sessionUser.id, approverDisplayName, contractId],
+      [
+        sessionUser.id,
+        approverDisplayName,
+        workSchedule,
+        contractType,
+        contractType === "FIXED" ? contractEndDate : null,
+        contractId,
+      ],
     );
 
     await connection.commit();
@@ -1141,6 +1279,10 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
         approvedByUserId: sessionUser.id,
         approvedByName: approverDisplayName,
         approvedAt: new Date().toISOString(),
+        rankId,
+        workSchedule,
+        contractType,
+        contractEndDate: contractType === "FIXED" ? contractEndDate : null,
       },
     });
   } catch (error) {

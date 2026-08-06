@@ -20,6 +20,10 @@ interface GenerateContractDocumentOptions {
   salary: number;
   salaryType: "PUBLIC" | "CONFIDENTIAL";
 
+  workSchedule: string;
+  contractType: "UNLIMITED" | "FIXED";
+  contractEndDate: Date | string | null;
+
   signatureName: string;
 }
 
@@ -79,30 +83,28 @@ function formatSalary(
   return `${new Intl.NumberFormat("ro-RO").format(salary)}$/oră`;
 }
 
-function normalizeRankName(rankName: string): string {
-  const normalizedRankName = rankName.trim().toLowerCase();
-
-  if (normalizedRankName.includes("chief executive officer")) {
-    return "Blackfold Chief Executive Officer";
+function formatContractType(
+  contractType: "UNLIMITED" | "FIXED",
+  contractEndDate: Date | string | null,
+): string {
+  if (contractType === "UNLIMITED") {
+    return "Nedeterminat";
   }
 
-  if (normalizedRankName.includes("director adjunct")) {
-    return "Director adjunct";
+  if (!contractEndDate) {
+    return "Determinat";
   }
 
-  if (normalizedRankName.includes("manager")) {
-    return "Blackfold Manager";
+  const parsedEndDate =
+    contractEndDate instanceof Date
+      ? contractEndDate
+      : new Date(`${contractEndDate}T00:00:00`);
+
+  if (Number.isNaN(parsedEndDate.getTime())) {
+    return "Determinat";
   }
 
-  if (normalizedRankName.includes("specialist")) {
-    return "Blackfold Specialist";
-  }
-
-  if (normalizedRankName.includes("crew")) {
-    return "Blackfold Crew";
-  }
-
-  return rankName.trim();
+  return `Determinat până la ${formatDate(parsedEndDate)}`;
 }
 
 function getTextFontSize(value: string, defaultSize: number): number {
@@ -171,6 +173,8 @@ function createTextElement(options: {
 
 async function createOverlaySvg(
   options: GenerateContractDocumentOptions,
+  templateWidth: number,
+  templateHeight: number,
 ): Promise<Buffer> {
   const fontBuffer = await fs.readFile(SIGNATURE_FONT_PATH);
   const fontBase64 = fontBuffer.toString("base64");
@@ -179,8 +183,13 @@ async function createOverlaySvg(
   const signatureName = options.signatureName.trim() || employeeName;
 
   const approvalDate = formatDate(options.approvalDate);
-  const rankName = normalizeRankName(options.rankName);
+  const rankName = options.rankName.trim();
   const salary = formatSalary(options.salary, options.salaryType);
+  const workSchedule = options.workSchedule.trim();
+  const contractType = formatContractType(
+    options.contractType,
+    options.contractEndDate,
+  );
 
   const elements = [
     // Numărul contractului
@@ -273,11 +282,29 @@ async function createOverlaySvg(
       fontSize: 18,
     }),
 
+    // Programul de lucru
+    createTextElement({
+      value: workSchedule,
+      x: 687,
+      y: 517,
+      width: 272,
+      fontSize: 18,
+    }),
+
+    // Tipul contractului
+    createTextElement({
+      value: contractType,
+      x: 687,
+      y: 542,
+      width: 272,
+      fontSize: 18,
+    }),
+
     // Numele angajatului din zona de semnare
     createTextElement({
       value: employeeName,
       x: 684,
-      y: 1453,
+      y: 1479,
       width: 154,
       fontSize: 13,
     }),
@@ -286,7 +313,7 @@ async function createOverlaySvg(
     createTextElement({
       value: approvalDate,
       x: 853,
-      y: 1472,
+      y: 1501,
       width: 104,
       fontSize: 14,
     }),
@@ -295,7 +322,7 @@ async function createOverlaySvg(
     createTextElement({
       value: signatureName,
       x: 684,
-      y: 1482,
+      y: 1505,
       width: 154,
       fontSize: 18,
       fontFamily: "Allura",
@@ -306,9 +333,10 @@ async function createOverlaySvg(
 
   const svg = `
     <svg
-      width="1024"
-      height="1536"
+      width="${templateWidth}"
+      height="${templateHeight}"
       viewBox="0 0 1024 1536"
+      preserveAspectRatio="none"
       xmlns="http://www.w3.org/2000/svg"
     >
       <style>
@@ -380,9 +408,25 @@ export async function generateContractDocument(
   const absolutePngPath = path.join(userDirectory, pngFileName);
   const absolutePdfPath = path.join(userDirectory, pdfFileName);
 
-  const overlaySvg = await createOverlaySvg(options);
+  const templateImage = sharp(CONTRACT_TEMPLATE_PATH);
+  const templateMetadata = await templateImage.metadata();
 
-  const pngBuffer = await sharp(CONTRACT_TEMPLATE_PATH)
+  const templateWidth = templateMetadata.width;
+  const templateHeight = templateMetadata.height;
+
+  if (!templateWidth || !templateHeight) {
+    throw new Error(
+      "Dimensiunile șablonului contractului nu au putut fi determinate.",
+    );
+  }
+
+  const overlaySvg = await createOverlaySvg(
+    options,
+    templateWidth,
+    templateHeight,
+  );
+
+  const pngBuffer = await templateImage
     .composite([
       {
         input: overlaySvg,

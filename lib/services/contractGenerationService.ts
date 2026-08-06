@@ -22,6 +22,10 @@ interface ContractRow extends RowDataPacket {
 
   approved_by_name: string | null;
 
+  work_schedule: string | null;
+  contract_type: "UNLIMITED" | "FIXED" | null;
+  contract_end_date: Date | string | null;
+
   status: string;
 }
 
@@ -90,6 +94,9 @@ export async function generateEmployeeContract(
       employee_signature_name,
       approved_at,
       approved_by_name,
+      work_schedule,
+      contract_type,
+      contract_end_date,
       status
     FROM employee_contracts
     WHERE id = ?
@@ -171,6 +178,23 @@ export async function generateEmployeeContract(
 
     if (!contract.employee_signature_name?.trim()) {
       throw new Error("Contractul nu are semnătura angajatului.");
+    }
+
+    if (!contract.work_schedule?.trim()) {
+      throw new Error("Contractul nu are programul de lucru configurat.");
+    }
+
+    if (
+      contract.contract_type !== "UNLIMITED" &&
+      contract.contract_type !== "FIXED"
+    ) {
+      throw new Error("Tipul contractului nu este configurat corect.");
+    }
+
+    if (contract.contract_type === "FIXED" && !contract.contract_end_date) {
+      throw new Error(
+        "Contractul determinat nu are data expirării configurată.",
+      );
     }
 
     if (
@@ -258,6 +282,9 @@ export async function generateEmployeeContract(
       rankName: rank.name,
       salary: rank.salary,
       salaryType: rank.salary_type,
+      workSchedule: contract.work_schedule,
+      contractType: contract.contract_type,
+      contractEndDate: contract.contract_end_date,
       signatureName: contract.employee_signature_name,
     });
 
@@ -302,8 +329,8 @@ export async function generateEmployeeContract(
       'Angajat Blackfold',
       ?,
       ?,
-      '17:00 - 00:00',
-      'Nedeterminat',
+      ?,
+      ?,
       ?,
       ?,
       ?
@@ -320,6 +347,8 @@ export async function generateEmployeeContract(
         contract.approved_at,
         rank.name,
         rank.salary,
+        contract.work_schedule,
+        contract.contract_type === "FIXED" ? "Determinat" : "Nedeterminat",
         contract.employee_signature_name,
         generatedByUserId,
         generatedByName,
