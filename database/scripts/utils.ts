@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { PoolConnection } from "mysql2/promise";
 import { db } from "../../lib/db";
+import { syncDiscordRoles } from "../../lib/discord/sync";
 
 export async function executeSqlFiles(
     connection: PoolConnection,
@@ -47,6 +48,7 @@ export async function installDatabase() {
         await connection.query("SET FOREIGN_KEY_CHECKS = 1;");
 
         await connection.commit();
+        await syncDiscordRoles();
 
         console.log("");
         console.log("==================================");
@@ -74,16 +76,18 @@ export async function dropTables(
   await connection.query("SET FOREIGN_KEY_CHECKS = 0;");
 
   await connection.query(`
-    DROP TABLE IF EXISTS notification_image_submissions;
-    DROP TABLE IF EXISTS notification_images;
-    DROP TABLE IF EXISTS notifications;
-    DROP TABLE IF EXISTS employee_contracts;
-    DROP TABLE IF EXISTS employee_details;
-    DROP TABLE IF EXISTS uniforms;
-    DROP TABLE IF EXISTS users;
-    DROP TABLE IF EXISTS user_ranks;
-    DROP TABLE IF EXISTS user_roles;
-  `);
+  DROP TABLE IF EXISTS employee_discord_roles;
+  DROP TABLE IF EXISTS discord_roles;
+  DROP TABLE IF EXISTS notification_image_submissions;
+  DROP TABLE IF EXISTS notification_images;
+  DROP TABLE IF EXISTS notifications;
+  DROP TABLE IF EXISTS employee_contracts;
+  DROP TABLE IF EXISTS employee_details;
+  DROP TABLE IF EXISTS uniforms;
+  DROP TABLE IF EXISTS users;
+  DROP TABLE IF EXISTS user_ranks;
+  DROP TABLE IF EXISTS user_roles;
+`);
 
   await connection.query("SET FOREIGN_KEY_CHECKS = 1;");
 }

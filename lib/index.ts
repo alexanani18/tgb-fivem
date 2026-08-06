@@ -14,6 +14,7 @@ import { cleanupExpiredNotifications } from "./services/notificationCleanup";
 import userRoutes from "./routes/users";
 import contractRoutes from "./routes/contracts";
 import uniformRoutes from "./routes/uniforms";
+import { startupDiscord } from "./discord/startup";
 
 const app = express();
 
@@ -138,6 +139,7 @@ async function startServer() {
     connection.release();
 
     console.log("✅ Database connected successfully.");
+    await startupDiscord();
 
     app.listen(PORT, () => {
       console.log(`🚀 Express API running on http://localhost:${PORT}`);
