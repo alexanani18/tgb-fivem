@@ -8,6 +8,8 @@ import { db } from "../db";
 import { requireAuth } from "../services/requireAuth";
 import { requireAdmin } from "../services/requireAdmin";
 
+import * as contractsDatabase from "../database/contracts";
+
 const router = Router();
 
 const MAX_IDENTITY_IMAGE_SIZE = 5 * 1024 * 1024;
@@ -87,61 +89,6 @@ type ContractStatus =
   | "REJECTED"
   | "BLOCKED";
 
-interface ContractRow extends RowDataPacket {
-  id: number;
-  user_id: number;
-  first_name: string;
-  last_name: string;
-  age: number;
-  game_id: string;
-  ci_series: string;
-  phone_number: string;
-  city_hours: number;
-  identity_image_path: string;
-  accepted_rules: number;
-  employee_signature_name: string | null;
-  status: ContractStatus;
-  contract_creation_blocked: number;
-  signed_at: Date | null;
-  approved_by_user_id: number | null;
-  approved_by_name: string | null;
-  admin_signature_path: string | null;
-  approved_at: Date | null;
-  created_at: Date;
-  updated_at: Date;
-  rejected_by_user_id: number | null;
-  rejected_by_name: string | null;
-  rejected_at: string | null;
-}
-
-interface AdminContractListRow extends RowDataPacket {
-  id: number;
-  user_id: number;
-  username: string;
-  first_name: string;
-  last_name: string;
-  age: number;
-  game_id: string;
-  ci_series: string;
-  phone_number: string;
-  city_hours: number;
-  identity_image_path: string;
-  accepted_rules: number;
-  employee_signature_name: string | null;
-  status: ContractStatus;
-  contract_creation_blocked: number;
-  signed_at: Date | null;
-  approved_by_user_id: number | null;
-  approved_by_name: string | null;
-  admin_signature_path: string | null;
-  approved_at: Date | null;
-  created_at: Date;
-  updated_at: Date;
-  rejected_by_user_id: number | null;
-  rejected_by_name: string | null;
-  rejected_at: string | null;
-}
-
 router.get("/me", requireAuth, async (req, res) => {
   try {
     const sessionUser = req.session.user;
@@ -153,43 +100,7 @@ router.get("/me", requireAuth, async (req, res) => {
       });
     }
 
-    const [contracts] = await db.execute<ContractRow[]>(
-      `
-        SELECT
-          ec.id,
-          ec.user_id,
-          ec.first_name,
-          ec.last_name,
-          ec.age,
-          ec.game_id,
-          ec.ci_series,
-          ec.phone_number,
-          ec.city_hours,
-          ec.identity_image_path,
-          ec.accepted_rules,
-          ec.employee_signature_name,
-          ec.status,
-          ec.contract_creation_blocked,
-          ec.signed_at,
-          ec.approved_by_user_id,
-          ec.approved_by_name,
-          ec.admin_signature_path,
-          ec.approved_at,
-          ec.rejected_by_user_id,
-          rejected_user.username AS rejected_by_name,
-          ec.rejected_at,
-          ec.created_at,
-          ec.updated_at
-        FROM employee_contracts ec
-        LEFT JOIN users rejected_user
-          ON rejected_user.id = ec.rejected_by_user_id
-        WHERE ec.user_id = ?
-        LIMIT 1
-      `,
-      [sessionUser.id],
-    );
-
-    const contract = contracts[0];
+    const contract = await contractsDatabase.getOwnContract(sessionUser.id);
 
     if (!contract) {
       return res.status(200).json({
@@ -603,47 +514,7 @@ router.post(
 
 router.get("/admin", requireAdmin, async (_req, res) => {
   try {
-    const [contracts] = await db.execute<AdminContractListRow[]>(
-      `
-        SELECT
-          ec.id,
-          ec.user_id,
-          u.username,
-          ec.first_name,
-          ec.last_name,
-          ec.age,
-          ec.game_id,
-          ec.ci_series,
-          ec.phone_number,
-          ec.city_hours,
-          ec.identity_image_path,
-          ec.accepted_rules,
-          ec.employee_signature_name,
-          ec.status,
-          ec.contract_creation_blocked,
-          ec.signed_at,
-          ec.approved_by_user_id,
-          ec.approved_by_name,
-          ec.admin_signature_path,
-          ec.approved_at,
-          ec.rejected_at,
-          ec.created_at,
-          ec.updated_at
-        FROM employee_contracts ec
-        INNER JOIN users u
-          ON u.id = ec.user_id
-        ORDER BY
-          CASE ec.status
-            WHEN 'PENDING_REVIEW' THEN 0
-            WHEN 'REJECTED' THEN 1
-            WHEN 'APPROVED' THEN 2
-            WHEN 'BLOCKED' THEN 3
-            ELSE 4
-          END,
-          ec.signed_at DESC,
-          ec.created_at DESC
-      `,
-    );
+    const contracts = await contractsDatabase.getAdminContracts();
 
     return res.status(200).json({
       success: true,
@@ -685,21 +556,11 @@ router.get("/admin", requireAdmin, async (_req, res) => {
 
 router.get("/admin/pending-count", requireAdmin, async (_req, res) => {
   try {
-    interface PendingContractsCountRow extends RowDataPacket {
-      pending_count: number;
-    }
-
-    const [rows] = await db.execute<PendingContractsCountRow[]>(
-      `
-        SELECT COUNT(*) AS pending_count
-        FROM employee_contracts
-        WHERE status = 'PENDING_REVIEW'
-      `,
-    );
+    const pendingCount = await contractsDatabase.getPendingContractsCount();
 
     return res.status(200).json({
       success: true,
-      pendingCount: Number(rows[0]?.pending_count ?? 0),
+      pendingCount,
     });
   } catch (error) {
     console.error("Get pending contracts count error:", error);
@@ -723,46 +584,7 @@ router.get("/admin/:contractId", requireAdmin, async (req, res) => {
       });
     }
 
-    const [contracts] = await db.execute<AdminContractListRow[]>(
-      `
-        SELECT
-          ec.id,
-          ec.user_id,
-          u.username,
-          ec.first_name,
-          ec.last_name,
-          ec.age,
-          ec.game_id,
-          ec.ci_series,
-          ec.phone_number,
-          ec.city_hours,
-          ec.identity_image_path,
-          ec.accepted_rules,
-          ec.employee_signature_name,
-          ec.status,
-          ec.contract_creation_blocked,
-          ec.signed_at,
-          ec.approved_by_user_id,
-          ec.approved_by_name,
-          ec.admin_signature_path,
-          ec.approved_at,
-          ec.rejected_by_user_id,
-          rejected_user.username AS rejected_by_name,
-          ec.rejected_at,
-          ec.created_at,
-          ec.updated_at
-        FROM employee_contracts ec
-        INNER JOIN users u
-          ON u.id = ec.user_id
-        LEFT JOIN users rejected_user
-          ON rejected_user.id = ec.rejected_by_user_id
-        WHERE ec.id = ?
-        LIMIT 1
-      `,
-      [contractId],
-    );
-
-    const contract = contracts[0];
+    const contract = await contractsDatabase.getAdminContractById(contractId);
 
     if (!contract) {
       return res.status(404).json({
@@ -963,24 +785,12 @@ router.post("/admin/:contractId/reject", requireAdmin, async (req, res) => {
       });
     }
 
-    const [result] = await db.execute<ResultSetHeader>(
-      `
-        UPDATE employee_contracts
-        SET
-          status = 'REJECTED',
-          rejected_by_user_id = ?,
-          rejected_at = CURRENT_TIMESTAMP,
-          approved_at = NULL,
-          approved_by_user_id = NULL,
-          approved_by_name = NULL,
-          admin_signature_path = NULL
-        WHERE id = ?
-          AND status = 'PENDING_REVIEW'
-      `,
-      [sessionUser.id, contractId],
+    const updated = await contractsDatabase.rejectContract(
+      contractId,
+      sessionUser.id,
     );
 
-    if (result.affectedRows === 0) {
+    if (!updated) {
       return res.status(404).json({
         success: false,
         message: "Contractul nu există sau nu mai este în așteptare.",
