@@ -19,10 +19,13 @@ import AppShell from "../../../components/AppShell";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL!;
 
+type SalaryType = "PUBLIC" | "CONFIDENTIAL";
+
 interface Rank {
   id: number;
   name: string;
   salary: number;
+  salary_type: SalaryType;
   sort_order: number;
   users_count: number;
 }
@@ -49,12 +52,14 @@ interface RanksResponse {
 interface RankFormState {
   name: string;
   salary: string;
+  salary_type: SalaryType;
   sort_order: string;
 }
 
 const EMPTY_FORM: RankFormState = {
   name: "",
   salary: "",
+  salary_type: "PUBLIC",
   sort_order: "",
 };
 
@@ -88,7 +93,13 @@ export default function ManagementRanksPage() {
   }, [ranks]);
 
   const totalSalary = useMemo(() => {
-    return ranks.reduce((total, rank) => total + Number(rank.salary), 0);
+    return ranks.reduce((total, rank) => {
+      if (rank.salary_type === "CONFIDENTIAL") {
+        return total;
+      }
+
+      return total + Number(rank.salary);
+    }, 0);
   }, [ranks]);
 
   const totalUsers = useMemo(() => {
@@ -182,6 +193,7 @@ export default function ManagementRanksPage() {
     setForm({
       name: "",
       salary: "",
+      salary_type: "PUBLIC",
       sort_order: String(nextSortOrder),
     });
 
@@ -194,7 +206,8 @@ export default function ManagementRanksPage() {
 
     setForm({
       name: rank.name,
-      salary: String(rank.salary),
+      salary: rank.salary_type === "CONFIDENTIAL" ? "" : String(rank.salary),
+      salary_type: rank.salary_type,
       sort_order: String(rank.sort_order),
     });
 
@@ -216,7 +229,8 @@ export default function ManagementRanksPage() {
     clearMessages();
 
     const name = form.name.trim();
-    const salary = Number(form.salary);
+    const salaryType = form.salary_type;
+    const salary = salaryType === "CONFIDENTIAL" ? 0 : Number(form.salary);
     const sortOrder = Number(form.sort_order);
 
     if (!name) {
@@ -224,8 +238,10 @@ export default function ManagementRanksPage() {
       return;
     }
 
-    if (!Number.isInteger(salary) || salary < 0) {
-      setErrorMessage("Salariul trebuie să fie un număr întreg pozitiv sau 0.");
+    if (salaryType === "PUBLIC" && (!Number.isInteger(salary) || salary <= 0)) {
+      setErrorMessage(
+        "Pentru un salariu public, valoarea trebuie să fie un număr întreg mai mare decât 0.",
+      );
       return;
     }
 
@@ -254,6 +270,7 @@ export default function ManagementRanksPage() {
         body: JSON.stringify({
           name,
           salary,
+          salary_type: salaryType,
           sort_order: sortOrder,
         }),
       });
@@ -488,7 +505,9 @@ export default function ManagementRanksPage() {
 
                   <p className="mt-1 text-xs text-zinc-500">
                     {highestRank
-                      ? `${formatSalary(highestRank.salary)} $/oră`
+                      ? highestRank.salary_type === "CONFIDENTIAL"
+                        ? "Salariu confidențial"
+                        : `${formatSalary(highestRank.salary)} $/oră`
                       : "Niciun rank configurat"}
                   </p>
                 </div>
@@ -600,7 +619,9 @@ export default function ManagementRanksPage() {
                           <td className="px-6 py-5">
                             <div className="inline-flex items-center gap-2 font-semibold text-emerald-300">
                               <CircleDollarSign size={18} />
-                              {formatSalary(rank.salary)} $/oră
+                              {rank.salary_type === "CONFIDENTIAL"
+                                ? "Confidențial"
+                                : `${formatSalary(rank.salary)} $/oră`}
                             </div>
                           </td>
 
@@ -730,6 +751,33 @@ export default function ManagementRanksPage() {
                 <div className="grid gap-5 sm:grid-cols-2">
                   <label className="block">
                     <span className="mb-2 block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+                      Tip salariu
+                    </span>
+
+                    <select
+                      value={form.salary_type}
+                      onChange={(event) => {
+                        const salaryType = event.target.value as SalaryType;
+
+                        setForm((currentForm) => ({
+                          ...currentForm,
+                          salary_type: salaryType,
+                          salary:
+                            salaryType === "CONFIDENTIAL"
+                              ? ""
+                              : currentForm.salary,
+                        }));
+                      }}
+                      disabled={isSubmitting}
+                      className="h-12 w-full rounded-xl border border-zinc-800 bg-black px-4 text-sm text-white outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <option value="PUBLIC">Public</option>
+                      <option value="CONFIDENTIAL">Confidențial</option>
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
                       Salariu/oră
                     </span>
 
@@ -742,15 +790,21 @@ export default function ManagementRanksPage() {
                           salary: event.target.value,
                         }))
                       }
-                      min={0}
+                      min={1}
                       step={1}
-                      placeholder="Ex: 10000"
-                      disabled={isSubmitting}
+                      placeholder={
+                        form.salary_type === "CONFIDENTIAL"
+                          ? "Salariu confidențial"
+                          : "Ex: 10000"
+                      }
+                      disabled={
+                        isSubmitting || form.salary_type === "CONFIDENTIAL"
+                      }
                       className="h-12 w-full rounded-xl border border-zinc-800 bg-black px-4 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-60"
                     />
                   </label>
 
-                  <label className="block">
+                  <label className="block sm:col-span-2">
                     <span className="mb-2 block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
                       Ordine
                     </span>
@@ -778,7 +832,8 @@ export default function ManagementRanksPage() {
                     Ordinea stabilește poziția rank-ului în liste. Rank-ul cu
                     ordinea{" "}
                     <span className="font-semibold text-emerald-300">1</span> va
-                    fi afișat primul.
+                    fi afișat primul. Pentru salariile confidențiale, valoarea
+                    nu este afișată și nu este inclusă în totalul salariilor.
                   </p>
                 </div>
               </div>

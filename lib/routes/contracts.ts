@@ -151,6 +151,37 @@ interface GeneratedContractRow extends RowDataPacket {
   generated_at: Date;
 }
 
+interface UserDisplayNameRow extends RowDataPacket {
+  display_name: string;
+}
+
+async function getUserDisplayName(
+  connection: Awaited<ReturnType<typeof db.getConnection>>,
+  userId: number,
+  fallbackUsername: string,
+): Promise<string> {
+  const [rows] = await connection.execute<UserDisplayNameRow[]>(
+    `
+      SELECT
+        COALESCE(
+          NULLIF(
+            TRIM(CONCAT_WS(' ', ec.last_name, ec.first_name)),
+            ''
+          ),
+          u.username
+        ) AS display_name
+      FROM users u
+      LEFT JOIN employee_contracts ec
+        ON ec.user_id = u.id
+      WHERE u.id = ?
+      LIMIT 1
+    `,
+    [userId],
+  );
+
+  return rows[0]?.display_name?.trim() || fallbackUsername;
+}
+
 router.get("/me", requireAuth, async (req, res) => {
   try {
     const sessionUser = req.session.user;
@@ -181,17 +212,36 @@ router.get("/me", requireAuth, async (req, res) => {
           ec.contract_creation_blocked,
           ec.signed_at,
           ec.approved_by_user_id,
-          ec.approved_by_name,
+          COALESCE(
+            NULLIF(
+              TRIM(CONCAT_WS(' ', approved_contract.last_name, approved_contract.first_name)),
+              ''
+            ),
+            approved_user.username,
+            ec.approved_by_name
+          ) AS approved_by_name,
           ec.admin_signature_path,
           ec.approved_at,
           ec.rejected_by_user_id,
-          rejected_user.username AS rejected_by_name,
+          COALESCE(
+            NULLIF(
+              TRIM(CONCAT_WS(' ', rejected_contract.last_name, rejected_contract.first_name)),
+              ''
+            ),
+            rejected_user.username
+          ) AS rejected_by_name,
           ec.rejected_at,
           ec.created_at,
           ec.updated_at
         FROM employee_contracts ec
+        LEFT JOIN users approved_user
+          ON approved_user.id = ec.approved_by_user_id
+        LEFT JOIN employee_contracts approved_contract
+          ON approved_contract.user_id = ec.approved_by_user_id
         LEFT JOIN users rejected_user
           ON rejected_user.id = ec.rejected_by_user_id
+        LEFT JOIN employee_contracts rejected_contract
+          ON rejected_contract.user_id = ec.rejected_by_user_id
         WHERE ec.user_id = ?
         LIMIT 1
       `,
@@ -560,6 +610,7 @@ router.post(
               approved_by_name = NULL,
               admin_signature_path = NULL,
               approved_at = NULL,
+              rejected_by_user_id = NULL,
               rejected_at = NULL
             WHERE id = ?
           `,
@@ -693,15 +744,38 @@ router.get("/admin", requireAdmin, async (_req, res) => {
           ec.contract_creation_blocked,
           ec.signed_at,
           ec.approved_by_user_id,
-          ec.approved_by_name,
+          COALESCE(
+            NULLIF(
+              TRIM(CONCAT_WS(' ', approved_contract.last_name, approved_contract.first_name)),
+              ''
+            ),
+            approved_user.username,
+            ec.approved_by_name
+          ) AS approved_by_name,
           ec.admin_signature_path,
           ec.approved_at,
+          ec.rejected_by_user_id,
+          COALESCE(
+            NULLIF(
+              TRIM(CONCAT_WS(' ', rejected_contract.last_name, rejected_contract.first_name)),
+              ''
+            ),
+            rejected_user.username
+          ) AS rejected_by_name,
           ec.rejected_at,
           ec.created_at,
           ec.updated_at
         FROM employee_contracts ec
         INNER JOIN users u
           ON u.id = ec.user_id
+        LEFT JOIN users approved_user
+          ON approved_user.id = ec.approved_by_user_id
+        LEFT JOIN employee_contracts approved_contract
+          ON approved_contract.user_id = ec.approved_by_user_id
+        LEFT JOIN users rejected_user
+          ON rejected_user.id = ec.rejected_by_user_id
+        LEFT JOIN employee_contracts rejected_contract
+          ON rejected_contract.user_id = ec.rejected_by_user_id
         ORDER BY
           CASE ec.status
             WHEN 'PENDING_REVIEW' THEN 0
@@ -738,6 +812,8 @@ router.get("/admin", requireAdmin, async (_req, res) => {
         approvedByName: contract.approved_by_name,
         adminSignaturePath: contract.admin_signature_path,
         approvedAt: contract.approved_at,
+        rejectedByUserId: contract.rejected_by_user_id,
+        rejectedByName: contract.rejected_by_name,
         rejectedAt: contract.rejected_at,
         createdAt: contract.created_at,
         updatedAt: contract.updated_at,
@@ -854,19 +930,38 @@ router.get("/admin/:contractId", requireAdmin, async (req, res) => {
           ec.contract_creation_blocked,
           ec.signed_at,
           ec.approved_by_user_id,
-          ec.approved_by_name,
+          COALESCE(
+            NULLIF(
+              TRIM(CONCAT_WS(' ', approved_contract.last_name, approved_contract.first_name)),
+              ''
+            ),
+            approved_user.username,
+            ec.approved_by_name
+          ) AS approved_by_name,
           ec.admin_signature_path,
           ec.approved_at,
           ec.rejected_by_user_id,
-          rejected_user.username AS rejected_by_name,
+          COALESCE(
+            NULLIF(
+              TRIM(CONCAT_WS(' ', rejected_contract.last_name, rejected_contract.first_name)),
+              ''
+            ),
+            rejected_user.username
+          ) AS rejected_by_name,
           ec.rejected_at,
           ec.created_at,
           ec.updated_at
         FROM employee_contracts ec
         INNER JOIN users u
           ON u.id = ec.user_id
+        LEFT JOIN users approved_user
+          ON approved_user.id = ec.approved_by_user_id
+        LEFT JOIN employee_contracts approved_contract
+          ON approved_contract.user_id = ec.approved_by_user_id
         LEFT JOIN users rejected_user
           ON rejected_user.id = ec.rejected_by_user_id
+        LEFT JOIN employee_contracts rejected_contract
+          ON rejected_contract.user_id = ec.rejected_by_user_id
         WHERE ec.id = ?
         LIMIT 1
       `,
@@ -1015,6 +1110,12 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
       });
     }
 
+    const approverDisplayName = await getUserDisplayName(
+      connection,
+      sessionUser.id,
+      sessionUser.username,
+    );
+
     await connection.execute<ResultSetHeader>(
       `
         UPDATE employee_contracts
@@ -1023,11 +1124,12 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
           approved_by_user_id = ?,
           approved_by_name = ?,
           approved_at = CURRENT_TIMESTAMP,
+          rejected_by_user_id = NULL,
           rejected_at = NULL,
           admin_signature_path = NULL
         WHERE id = ?
       `,
-      [sessionUser.id, sessionUser.username, contractId],
+      [sessionUser.id, approverDisplayName, contractId],
     );
 
     await connection.commit();
@@ -1037,7 +1139,7 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
       message: "Contractul a fost aprobat, iar utilizatorul a devenit ANGAJAT.",
       approval: {
         approvedByUserId: sessionUser.id,
-        approvedByName: sessionUser.username,
+        approvedByName: approverDisplayName,
         approvedAt: new Date().toISOString(),
       },
     });
@@ -1056,6 +1158,8 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
 });
 
 router.post("/admin/:contractId/reject", requireAdmin, async (req, res) => {
+  const connection = await db.getConnection();
+
   try {
     const contractId = Number(req.params.contractId);
     const sessionUser = req.session.user;
@@ -1074,7 +1178,13 @@ router.post("/admin/:contractId/reject", requireAdmin, async (req, res) => {
       });
     }
 
-    const [result] = await db.execute<ResultSetHeader>(
+    const rejecterDisplayName = await getUserDisplayName(
+      connection,
+      sessionUser.id,
+      sessionUser.username,
+    );
+
+    const [result] = await connection.execute<ResultSetHeader>(
       `
         UPDATE employee_contracts
         SET
@@ -1101,6 +1211,11 @@ router.post("/admin/:contractId/reject", requireAdmin, async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Contract respins.",
+      rejection: {
+        rejectedByUserId: sessionUser.id,
+        rejectedByName: rejecterDisplayName,
+        rejectedAt: new Date().toISOString(),
+      },
     });
   } catch (error) {
     console.error("Reject contract error:", error);
@@ -1109,6 +1224,8 @@ router.post("/admin/:contractId/reject", requireAdmin, async (req, res) => {
       success: false,
       message: "Eroare internă la respingerea contractului.",
     });
+  } finally {
+    connection.release();
   }
 });
 

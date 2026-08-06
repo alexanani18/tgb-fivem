@@ -33,12 +33,16 @@ interface UserRow extends RowDataPacket {
   user_rank_id: number | null;
 }
 
+type SalaryType = "PUBLIC" | "CONFIDENTIAL";
+
 interface RankRow extends RowDataPacket {
   id: number;
 
   name: string;
 
   salary: number;
+
+  salary_type: SalaryType;
 }
 
 interface EmployeeDocument {
@@ -146,7 +150,8 @@ export async function generateEmployeeContract(
     SELECT
       id,
       name,
-      salary
+      salary,
+      salary_type
     FROM user_ranks
     WHERE id = ?
     LIMIT 1
@@ -168,8 +173,15 @@ export async function generateEmployeeContract(
       throw new Error("Contractul nu are semnătura angajatului.");
     }
 
-    if (!Number.isInteger(rank.salary) || rank.salary <= 0) {
-      throw new Error("Salariul gradului nu este configurat corect.");
+    if (
+      rank.salary_type === "PUBLIC" &&
+      (!Number.isInteger(rank.salary) || rank.salary <= 0)
+    ) {
+      throw new Error("Salariul public al gradului nu este configurat corect.");
+    }
+
+    if (rank.salary_type !== "PUBLIC" && rank.salary_type !== "CONFIDENTIAL") {
+      throw new Error("Tipul salariului gradului nu este configurat corect.");
     }
 
     /**
@@ -245,6 +257,7 @@ export async function generateEmployeeContract(
       approvalDate: contract.approved_at,
       rankName: rank.name,
       salary: rank.salary,
+      salaryType: rank.salary_type,
       signatureName: contract.employee_signature_name,
     });
 

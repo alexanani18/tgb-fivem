@@ -276,7 +276,7 @@ async function employeeExists(
         ON ur.id = u.user_role_id
 
       WHERE u.id = ?
-        AND ur.name IN ('ANGAJAT', 'MAFIA')
+        AND ur.name IN ('ANGAJAT', 'MAFIA', 'ADMIN')
 
       LIMIT 1
     `,
@@ -354,7 +354,7 @@ router.get("/", requireAdmin, async (_req, res) => {
         LEFT JOIN employee_details ed
           ON ed.user_id = u.id
 
-        WHERE ur.name IN ('ANGAJAT', 'MAFIA')
+        WHERE ur.name IN ('ANGAJAT', 'MAFIA', 'ADMIN')
           AND (
             ed.status IS NULL
             OR ed.status <> 'DEMISIONAT'
@@ -559,7 +559,7 @@ router.get("/export/excel", requireAdmin, async (req, res) => {
         LEFT JOIN employee_details ed
           ON ed.user_id = u.id
 
-        WHERE ur.name IN ('ANGAJAT', 'MAFIA')
+        WHERE ur.name IN ('ANGAJAT', 'MAFIA', 'ADMIN')
           AND (
             ed.status IS NULL
             OR ed.status <> 'DEMISIONAT'
@@ -1369,7 +1369,7 @@ router.get("/:userId", requireAdmin, async (req, res) => {
           ON ed.user_id = u.id
 
         WHERE u.id = ?
-          AND ur.name IN ('ANGAJAT', 'MAFIA')
+          AND ur.name IN ('ANGAJAT', 'MAFIA', 'ADMIN')
 
         LIMIT 1
       `,

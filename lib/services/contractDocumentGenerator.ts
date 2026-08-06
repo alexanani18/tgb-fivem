@@ -18,6 +18,7 @@ interface GenerateContractDocumentOptions {
 
   rankName: string;
   salary: number;
+  salaryType: "PUBLIC" | "CONFIDENTIAL";
 
   signatureName: string;
 }
@@ -67,12 +68,27 @@ function formatDate(date: Date): string {
   }).format(date);
 }
 
-function formatSalary(salary: number): string {
+function formatSalary(
+  salary: number,
+  salaryType: "PUBLIC" | "CONFIDENTIAL",
+): string {
+  if (salaryType === "CONFIDENTIAL") {
+    return "CONFIDENȚIAL";
+  }
+
   return `${new Intl.NumberFormat("ro-RO").format(salary)}$/oră`;
 }
 
 function normalizeRankName(rankName: string): string {
   const normalizedRankName = rankName.trim().toLowerCase();
+
+  if (normalizedRankName.includes("chief executive officer")) {
+    return "Blackfold Chief Executive Officer";
+  }
+
+  if (normalizedRankName.includes("director adjunct")) {
+    return "Director adjunct";
+  }
 
   if (normalizedRankName.includes("manager")) {
     return "Blackfold Manager";
@@ -82,7 +98,11 @@ function normalizeRankName(rankName: string): string {
     return "Blackfold Specialist";
   }
 
-  return "Blackfold Crew";
+  if (normalizedRankName.includes("crew")) {
+    return "Blackfold Crew";
+  }
+
+  return rankName.trim();
 }
 
 function getTextFontSize(value: string, defaultSize: number): number {
@@ -160,7 +180,7 @@ async function createOverlaySvg(
 
   const approvalDate = formatDate(options.approvalDate);
   const rankName = normalizeRankName(options.rankName);
-  const salary = formatSalary(options.salary);
+  const salary = formatSalary(options.salary, options.salaryType);
 
   const elements = [
     // Numărul contractului

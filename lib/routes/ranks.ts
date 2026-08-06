@@ -6,10 +6,13 @@ import { requireAdmin } from "../services/requireAdmin";
 
 const router = Router();
 
+type SalaryType = "PUBLIC" | "CONFIDENTIAL";
+
 interface RankRow extends RowDataPacket {
   id: number;
   name: string;
   salary: number;
+  salary_type: SalaryType;
   sort_order: number;
   users_count: number | string;
 }
@@ -33,6 +36,7 @@ router.get("/admin", requireAdmin, async (_req, res) => {
         ur.id,
         ur.name,
         ur.salary,
+        ur.salary_type,
         ur.sort_order,
         COUNT(u.id) AS users_count
       FROM user_ranks ur
@@ -41,6 +45,7 @@ router.get("/admin", requireAdmin, async (_req, res) => {
         ur.id,
         ur.name,
         ur.salary,
+        ur.salary_type,
         ur.sort_order
       ORDER BY
         ur.sort_order ASC,
@@ -51,6 +56,7 @@ router.get("/admin", requireAdmin, async (_req, res) => {
       id: Number(rank.id),
       name: rank.name,
       salary: Number(rank.salary),
+      salary_type: rank.salary_type,
       sort_order: Number(rank.sort_order),
       users_count: Number(rank.users_count),
     }));
@@ -77,7 +83,11 @@ router.post("/admin", requireAdmin, async (req, res) => {
   try {
     const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
 
-    const salary = Number(req.body.salary);
+    const salaryType =
+      req.body.salary_type === "CONFIDENTIAL" ? "CONFIDENTIAL" : "PUBLIC";
+
+    const salary = salaryType === "CONFIDENTIAL" ? 0 : Number(req.body.salary);
+
     const sortOrder = Number(req.body.sort_order);
 
     if (!name) {
@@ -94,10 +104,11 @@ router.post("/admin", requireAdmin, async (req, res) => {
       });
     }
 
-    if (!Number.isInteger(salary) || salary < 0) {
+    if (salaryType === "PUBLIC" && (!Number.isInteger(salary) || salary <= 0)) {
       return res.status(400).json({
         success: false,
-        message: "Salariul trebuie să fie un număr întreg pozitiv sau 0.",
+        message:
+          "Pentru un salariu public, valoarea trebuie să fie un număr întreg mai mare decât 0.",
       });
     }
 
@@ -131,11 +142,12 @@ router.post("/admin", requireAdmin, async (req, res) => {
         INSERT INTO user_ranks (
           name,
           salary,
+          salary_type,
           sort_order
         )
-        VALUES (?, ?, ?)
+        VALUES (?, ?, ?, ?)
       `,
-      [name, salary, sortOrder],
+      [name, salary, salaryType, sortOrder],
     );
 
     return res.status(201).json({
@@ -145,6 +157,7 @@ router.post("/admin", requireAdmin, async (req, res) => {
         id: result.insertId,
         name,
         salary,
+        salary_type: salaryType,
         sort_order: sortOrder,
         users_count: 0,
       },
@@ -169,7 +182,11 @@ router.patch("/admin/:rankId", requireAdmin, async (req, res) => {
 
     const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
 
-    const salary = Number(req.body.salary);
+    const salaryType =
+      req.body.salary_type === "CONFIDENTIAL" ? "CONFIDENTIAL" : "PUBLIC";
+
+    const salary = salaryType === "CONFIDENTIAL" ? 0 : Number(req.body.salary);
+
     const sortOrder = Number(req.body.sort_order);
 
     if (!Number.isInteger(rankId) || rankId <= 0) {
@@ -193,10 +210,11 @@ router.patch("/admin/:rankId", requireAdmin, async (req, res) => {
       });
     }
 
-    if (!Number.isInteger(salary) || salary < 0) {
+    if (salaryType === "PUBLIC" && (!Number.isInteger(salary) || salary <= 0)) {
       return res.status(400).json({
         success: false,
-        message: "Salariul trebuie să fie un număr întreg pozitiv sau 0.",
+        message:
+          "Pentru un salariu public, valoarea trebuie să fie un număr întreg mai mare decât 0.",
       });
     }
 
@@ -252,10 +270,11 @@ router.patch("/admin/:rankId", requireAdmin, async (req, res) => {
         SET
           name = ?,
           salary = ?,
+          salary_type = ?,
           sort_order = ?
         WHERE id = ?
       `,
-      [name, salary, sortOrder, rankId],
+      [name, salary, salaryType, sortOrder, rankId],
     );
 
     const [countRows] = await db.query<CountRow[]>(
@@ -274,6 +293,7 @@ router.patch("/admin/:rankId", requireAdmin, async (req, res) => {
         id: rankId,
         name,
         salary,
+        salary_type: salaryType,
         sort_order: sortOrder,
         users_count: Number(countRows[0]?.users_count ?? 0),
       },
