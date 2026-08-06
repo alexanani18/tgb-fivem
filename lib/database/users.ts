@@ -21,7 +21,7 @@ interface RoleRow extends RowDataPacket {
   name: string;
 }
 
-interface EmployeeUserRow extends RowDataPacket {
+export interface EmployeeUserRow extends RowDataPacket {
   id: number;
 
   first_name: string;
@@ -473,5 +473,97 @@ export async function updateUser(
       WHERE id = ?
     `,
     [...updateValues, userId],
+  );
+}
+
+export async function getEmployeesForExcelExport(): Promise<EmployeeUserRow[]> {
+  const [rows] = await db.execute<EmployeeUserRow[]>(
+    `
+        SELECT
+          u.id,
+
+          COALESCE(ec.first_name, u.username) AS first_name,
+          COALESCE(ec.last_name, '') AS last_name,
+
+          ec.game_id AS iban,
+          ec.phone_number,
+          ec.ci_series,
+          ec.city_hours,
+
+          rk.name AS employee_rank,
+
+          ed.status AS employee_status,
+          ed.meeting_attendance,
+          ed.has_uniform,
+          ed.has_car,
+          ed.observations,
+          ed.discord_id,
+
+          u.created_at
+
+        FROM users u
+
+        INNER JOIN user_roles ur
+          ON ur.id = u.user_role_id
+
+        LEFT JOIN user_ranks rk
+          ON rk.id = u.user_rank_id
+
+        LEFT JOIN employee_contracts ec
+          ON ec.user_id = u.id
+
+        LEFT JOIN employee_details ed
+          ON ed.user_id = u.id
+
+        WHERE ur.name IN ('ANGAJAT', 'MAFIA')
+          AND (
+            ed.status IS NULL
+            OR ed.status <> 'DEMISIONAT'
+          )
+
+        ORDER BY
+          COALESCE(rk.sort_order, 999) ASC,
+          COALESCE(ec.last_name, u.username) ASC,
+          COALESCE(ec.first_name, u.username) ASC
+      `,
+  );
+
+  return rows;
+}
+
+interface EmployeeIdentityRow extends RowDataPacket {
+  id: number;
+  identity_image_path: string | null;
+}
+
+export async function getEmployeeIdentityContract(
+  userId: number,
+): Promise<EmployeeIdentityRow | null> {
+  const [rows] = await db.execute<EmployeeIdentityRow[]>(
+    `
+      SELECT
+        id,
+        identity_image_path
+      FROM employee_contracts
+      WHERE user_id = ?
+      LIMIT 1
+    `,
+    [userId],
+  );
+
+  return rows[0] ?? null;
+}
+
+export async function updateEmployeeIdentityImage(
+  userId: number,
+  identityImagePath: string,
+): Promise<void> {
+  await db.execute<ResultSetHeader>(
+    `
+      UPDATE employee_contracts
+      SET identity_image_path = ?
+      WHERE user_id = ?
+    `,
+    [identityImagePath, userId],
   );
 }

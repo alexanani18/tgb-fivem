@@ -1,4 +1,4 @@
-import {Router} from "express";
+import { Router } from "express";
 import bcrypt from "bcryptjs";
 import type {
   ResultSetHeader,
@@ -26,42 +26,13 @@ import fs from "node:fs";
 import path from "node:path";
 import multer from "multer";
 import ExcelJS from "exceljs";
-
+import * as usersDatabase from "../database/users";
 import { db } from "../db";
 import { requireAdmin } from "../services/requireAdmin";
 
 const router = Router();
 interface EmployeeContractExistsRow extends RowDataPacket {
   id: number;
-}
-
-interface EmployeeIdentityRow extends RowDataPacket {
-  id: number;
-  identity_image_path: string | null;
-}
-
-interface EmployeeUserRow extends RowDataPacket {
-  id: number;
-
-  first_name: string;
-  last_name: string;
-
-  iban: string | number | null;
-  phone_number: string | null;
-  ci_series: string | null;
-  city_hours: string | number | null;
-
-  employee_rank: string | null;
-  employee_status: EmployeeStatus | null;
-
-  meeting_attendance: number | null;
-  has_uniform: number | null;
-  has_car: number | null;
-
-  observations: string | null;
-  discord_id: string | null;
-
-  created_at: Date;
 }
 
 const CONTRACT_IDENTITIES_DIRECTORY = path.join(
@@ -247,56 +218,7 @@ router.get("/", requireAdmin, async (_req, res) => {
 
 router.get("/export/excel", requireAdmin, async (req, res) => {
   try {
-    const [employees] = await db.execute<EmployeeUserRow[]>(
-      `
-        SELECT
-          u.id,
-
-          COALESCE(ec.first_name, u.username) AS first_name,
-          COALESCE(ec.last_name, '') AS last_name,
-
-          ec.game_id AS iban,
-          ec.phone_number,
-          ec.ci_series,
-          ec.city_hours,
-
-          rk.name AS employee_rank,
-
-          ed.status AS employee_status,
-          ed.meeting_attendance,
-          ed.has_uniform,
-          ed.has_car,
-          ed.observations,
-          ed.discord_id,
-
-          u.created_at
-
-        FROM users u
-
-        INNER JOIN user_roles ur
-          ON ur.id = u.user_role_id
-
-        LEFT JOIN user_ranks rk
-          ON rk.id = u.user_rank_id
-
-        LEFT JOIN employee_contracts ec
-          ON ec.user_id = u.id
-
-        LEFT JOIN employee_details ed
-          ON ed.user_id = u.id
-
-        WHERE ur.name IN ('ANGAJAT', 'MAFIA')
-          AND (
-            ed.status IS NULL
-            OR ed.status <> 'DEMISIONAT'
-          )
-
-        ORDER BY
-          COALESCE(rk.sort_order, 999) ASC,
-          COALESCE(ec.last_name, u.username) ASC,
-          COALESCE(ec.first_name, u.username) ASC
-      `,
-    );
+    const employees = await usersDatabase.getEmployeesForExcelExport();
 
     const workbook = new ExcelJS.Workbook();
 
@@ -1208,19 +1130,7 @@ router.patch(
         });
       }
 
-      const [contracts] = await db.execute<EmployeeIdentityRow[]>(
-        `
-          SELECT
-            id,
-            identity_image_path
-          FROM employee_contracts
-          WHERE user_id = ?
-          LIMIT 1
-        `,
-        [userId],
-      );
-
-      const contract = contracts[0];
+      const contract = await usersDatabase.getEmployeeIdentityContract(userId);
 
       if (!contract) {
         fs.unlinkSync(req.file.path);
@@ -1233,13 +1143,9 @@ router.patch(
 
       const newRelativePath = `/contract-images/${userId}/${req.file.filename}`;
 
-      await db.execute<ResultSetHeader>(
-        `
-          UPDATE employee_contracts
-          SET identity_image_path = ?
-          WHERE user_id = ?
-        `,
-        [newRelativePath, userId],
+      await usersDatabase.updateEmployeeIdentityImage(
+        userId,
+        newRelativePath,
       );
 
       if (contract.identity_image_path) {

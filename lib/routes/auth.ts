@@ -1,21 +1,10 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import type { RowDataPacket } from "mysql2";
-
-import { db } from "../db";
+import * as authDatabase from "../database/auth";
 import { requireAuth } from "../services/requireAuth";
 
 const router = Router();
 
-type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA" | "DEV" | "GUEST";
-
-interface UserRow extends RowDataPacket {
-  id: number;
-  username: string;
-  password_hash: string;
-  user_role: UserRole;
-  is_active: number;
-}
 
 router.get("/test", (_req, res) => {
   return res.status(200).json({
@@ -40,24 +29,7 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    const [users] = await db.execute<UserRow[]>(
-      `
-        SELECT
-          u.id,
-          u.username,
-          u.password_hash,
-          ur.name AS user_role,
-          u.is_active
-        FROM users u
-        INNER JOIN user_roles ur
-          ON ur.id = u.user_role_id
-        WHERE u.username = ?
-        LIMIT 1
-      `,
-      [username.trim()],
-    );
-
-    const user = users[0];
+    const user = await authDatabase.findByUsername(username.trim());
 
     if (!user) {
       return res.status(401).json({
@@ -171,24 +143,7 @@ router.patch("/schimbare-parola", async (req, res) => {
       });
     }
 
-    const [users] = await db.execute<UserRow[]>(
-      `
-        SELECT
-          u.id,
-          u.username,
-          u.password_hash,
-          ur.name AS user_role,
-          u.is_active
-        FROM users u
-        INNER JOIN user_roles ur
-          ON ur.id = u.user_role_id
-        WHERE u.id = ?
-        LIMIT 1
-      `,
-      [sessionUser.id],
-    );
-
-    const user = users[0];
+    const user = await authDatabase.findById(sessionUser.id);
 
     if (!user) {
       return res.status(404).json({
@@ -230,14 +185,7 @@ router.patch("/schimbare-parola", async (req, res) => {
 
     const newPasswordHash = await bcrypt.hash(newPassword, 12);
 
-    await db.execute(
-      `
-        UPDATE users
-        SET password_hash = ?
-        WHERE id = ?
-      `,
-      [newPasswordHash, user.id],
-    );
+    await authDatabase.updatePassword(user.id, newPasswordHash);
 
     return res.status(200).json({
       success: true,
