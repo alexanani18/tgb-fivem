@@ -1,13 +1,15 @@
 CREATE TABLE IF NOT EXISTS `workflow_types` (
   `id` int NOT NULL AUTO_INCREMENT,
   `code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `request_prefix` varchar(10) COLLATE utf8mb4_unicode_ci NOT NULL,
   `name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_workflow_types_code` (`code`)
+  UNIQUE KEY `uq_workflow_types_code` (`code`),
+  UNIQUE KEY `uq_workflow_types_request_prefix` (`request_prefix`)
 ) ENGINE=InnoDB
 DEFAULT CHARSET=utf8mb4
 COLLATE=utf8mb4_unicode_ci;

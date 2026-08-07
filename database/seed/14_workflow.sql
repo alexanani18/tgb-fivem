@@ -1,12 +1,14 @@
 INSERT INTO `workflow_types`
-  (`code`, `name`, `description`)
+  (`code`, `request_prefix`, `name`, `description`)
 VALUES
   (
     'RESIGNATION',
+    'RES',
     'Resignation Request',
     'Employee resignation workflow'
   )
 ON DUPLICATE KEY UPDATE
+  `request_prefix` = VALUES(`request_prefix`),
   `name` = VALUES(`name`),
   `description` = VALUES(`description`);
 

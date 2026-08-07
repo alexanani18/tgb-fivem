@@ -8,22 +8,26 @@ import {
   BriefcaseBusiness,
   ChevronDown,
   ChevronRight,
+  Clipboard,
+  FileText,
   House,
+  Hourglass,
+  KeyRound,
+  LogOut,
   Mail,
+  ServerCog,
   Shield,
   UserLock,
-  Users,
-  Hourglass,
-  UserShield,
-  LogOut,
-  ServerCog,
   UserPlus,
-  KeyRound,
+  UserRoundArrowLeft,
   UserRoundCog,
+  UserShield,
+  Users,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 export type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA" | "DEV" | "GUEST";
+
 type SidebarSectionId =
   | "business"
   | "mafia"
@@ -44,6 +48,7 @@ interface SidebarSubItem {
   label: string;
   href: string;
   icon: typeof House;
+  roles?: UserRole[];
 }
 
 interface SidebarItem {
@@ -51,8 +56,10 @@ interface SidebarItem {
   href?: string;
   icon: typeof House;
   children?: SidebarSubItem[];
+  roles?: UserRole[];
   showUnreadBadge?: boolean;
   showPendingContractsBadge?: boolean;
+  showPendingRequestsBadge?: boolean;
 }
 
 interface SidebarSection {
@@ -72,6 +79,12 @@ interface UnreadCountResponse {
 interface PendingContractsCountResponse {
   success: boolean;
   pendingCount?: number;
+  message?: string;
+}
+
+interface PendingRequestsCountResponse {
+  success: boolean;
+  count?: number;
   message?: string;
 }
 
@@ -113,6 +126,28 @@ const sidebarSections: SidebarSection[] = [
         href: "/afacere/uniforma",
         icon: Shield,
       },
+      {
+        label: "Cereri",
+        icon: Clipboard,
+        roles: ["ADMIN", "ANGAJAT", "MAFIA"],
+        children: [
+          {
+            label: "Demisie",
+            icon: UserRoundArrowLeft,
+            href: "/afacere/cereri/demisie",
+          },
+          {
+            label: "Inactivitate",
+            icon: Hourglass,
+            href: "/afacere/cereri/inactivitate",
+          },
+          {
+            label: "Concediu",
+            icon: FileText,
+            href: "/afacere/cereri/concediu",
+          },
+        ],
+      },
     ],
   },
   {
@@ -125,6 +160,12 @@ const sidebarSections: SidebarSection[] = [
         label: "Review Dovadă",
         href: "/afacere/notificari/review",
         icon: UserShield,
+      },
+      {
+        label: "Cereri",
+        href: "/afacere/cereri",
+        icon: Clipboard,
+        showPendingRequestsBadge: true,
       },
       {
         label: "Adaugă utilizator",
@@ -230,6 +271,12 @@ function isManagementTablesPath(pathname: string) {
   return pathname.startsWith("/afacere/management");
 }
 
+function isEmployeeRequestsPath(pathname: string) {
+  return (
+    pathname.startsWith("/afacere/cereri/") && pathname !== "/afacere/cereri"
+  );
+}
+
 function isAccountPath(pathname: string) {
   return pathname === "/cont" || pathname.startsWith("/cont/");
 }
@@ -241,6 +288,7 @@ function isContractPath(pathname: string) {
 function isControlPanelPath(pathname: string) {
   return (
     pathname.startsWith("/afacere/notificari/review") ||
+    pathname === "/afacere/cereri" ||
     pathname.startsWith("/afacere/add_user") ||
     pathname.startsWith("/afacere/angajati") ||
     pathname.startsWith("/afacere/contracte") ||
@@ -308,7 +356,6 @@ function getSidebarIdentity(role: UserRole, rank: string | null) {
         label: normalizedRank ?? "Administrator",
         icon: UserShield,
         accentClassName: "text-[#D6AE62]",
-        avatarClassName: "border-[#B8904D]/30 bg-[#B8904D]/10 text-[#D6AE62]",
       };
 
     case "ANGAJAT":
@@ -316,8 +363,6 @@ function getSidebarIdentity(role: UserRole, rank: string | null) {
         label: normalizedRank ?? "Angajat",
         icon: Shield,
         accentClassName: "text-emerald-400",
-        avatarClassName:
-          "border-emerald-500/25 bg-emerald-500/10 text-emerald-400",
       };
 
     case "MAFIA":
@@ -325,8 +370,6 @@ function getSidebarIdentity(role: UserRole, rank: string | null) {
         label: normalizedRank ? `Mafia • ${normalizedRank}` : "Mafia",
         icon: Users,
         accentClassName: "text-purple-400",
-        avatarClassName:
-          "border-purple-500/25 bg-purple-500/10 text-purple-400",
       };
 
     case "DEV":
@@ -334,7 +377,6 @@ function getSidebarIdentity(role: UserRole, rank: string | null) {
         label: "Developer",
         icon: ServerCog,
         accentClassName: "text-red-400",
-        avatarClassName: "border-red-500/25 bg-red-500/10 text-red-400",
       };
 
     case "GUEST":
@@ -342,8 +384,28 @@ function getSidebarIdentity(role: UserRole, rank: string | null) {
         label: "Guest",
         icon: UserRoundCog,
         accentClassName: "text-amber-400",
-        avatarClassName: "border-amber-500/25 bg-amber-500/10 text-amber-400",
       };
+  }
+}
+
+function canRoleSeeItem(item: SidebarItem, role: UserRole) {
+  return !item.roles || item.roles.includes(role);
+}
+
+function canRoleSeeSubItem(item: SidebarSubItem, role: UserRole) {
+  return !item.roles || item.roles.includes(role);
+}
+
+function getItemId(item: SidebarItem) {
+  switch (item.label) {
+    case "Angajați":
+      return "employees";
+    case "Management tabele":
+      return "management";
+    case "Cereri":
+      return "requests";
+    default:
+      return item.label.toLowerCase().replace(/\s+/g, "-");
   }
 }
 
@@ -360,8 +422,11 @@ export default function DashboardSidebar({
   const displayName = getFullName(firstName, lastName, username);
   const sidebarIdentity = getSidebarIdentity(role, rank);
   const SidebarIdentityIcon = sidebarIdentity.icon;
+
   const [unreadCount, setUnreadCount] = useState(0);
   const [pendingContractsCount, setPendingContractsCount] = useState(0);
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+
   const [itemOverrides, setItemOverrides] = useState<{
     pathname: string;
     values: Record<string, boolean>;
@@ -401,7 +466,6 @@ export default function DashboardSidebar({
       setUnreadCount(Number(data.unreadCount ?? 0));
     } catch (error) {
       console.error("Failed to load unread notification count:", error);
-
       setUnreadCount(0);
     }
   }, []);
@@ -431,41 +495,38 @@ export default function DashboardSidebar({
       setPendingContractsCount(Number(data.pendingCount ?? 0));
     } catch (error) {
       console.error("Failed to load pending contracts count:", error);
-
       setPendingContractsCount(0);
     }
   }, [role]);
 
-  useEffect(() => {
+  const loadPendingRequestsCount = useCallback(async () => {
     if (role !== "ADMIN") {
+      setPendingRequestsCount(0);
       return;
     }
 
-    const timeoutId = window.setTimeout(() => {
-      void loadPendingContractsCount();
-    }, 0);
+    try {
+      const response = await fetch(`${API_URL}/workflows/admin/pending-count`, {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      });
 
-    const intervalId = window.setInterval(() => {
-      void loadPendingContractsCount();
-    }, 30_000);
+      const data = (await response.json()) as PendingRequestsCountResponse;
 
-    return () => {
-      window.clearTimeout(timeoutId);
-      window.clearInterval(intervalId);
-    };
-  }, [loadPendingContractsCount, role]);
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message ??
+            "Numărul cererilor în așteptare nu a putut fi încărcat.",
+        );
+      }
 
-  useEffect(() => {
-    function handleContractsUpdated() {
-      void loadPendingContractsCount();
+      setPendingRequestsCount(Number(data.count ?? 0));
+    } catch (error) {
+      console.error("Failed to load pending workflow request count:", error);
+      setPendingRequestsCount(0);
     }
-
-    window.addEventListener("contracts-updated", handleContractsUpdated);
-
-    return () => {
-      window.removeEventListener("contracts-updated", handleContractsUpdated);
-    };
-  }, [loadPendingContractsCount]);
+  }, [role]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -500,6 +561,51 @@ export default function DashboardSidebar({
     };
   }, [loadUnreadCount]);
 
+  useEffect(() => {
+    if (role !== "ADMIN") {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void loadPendingContractsCount();
+      void loadPendingRequestsCount();
+    }, 0);
+
+    const intervalId = window.setInterval(() => {
+      void loadPendingContractsCount();
+      void loadPendingRequestsCount();
+    }, 30_000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
+    };
+  }, [loadPendingContractsCount, loadPendingRequestsCount, role]);
+
+  useEffect(() => {
+    function handleContractsUpdated() {
+      void loadPendingContractsCount();
+    }
+
+    function handleWorkflowRequestsUpdated() {
+      void loadPendingRequestsCount();
+    }
+
+    window.addEventListener("contracts-updated", handleContractsUpdated);
+    window.addEventListener(
+      "workflow-requests-updated",
+      handleWorkflowRequestsUpdated,
+    );
+
+    return () => {
+      window.removeEventListener("contracts-updated", handleContractsUpdated);
+      window.removeEventListener(
+        "workflow-requests-updated",
+        handleWorkflowRequestsUpdated,
+      );
+    };
+  }, [loadPendingContractsCount, loadPendingRequestsCount]);
+
   async function handleLogout() {
     try {
       const response = await fetch(`${API_URL}/auth/logout`, {
@@ -525,6 +631,7 @@ export default function DashboardSidebar({
   const routeOpenItems: Record<string, boolean> = {
     employees: isEmployeesPath(pathname),
     management: isManagementTablesPath(pathname),
+    requests: isEmployeeRequestsPath(pathname),
   };
 
   const routeOpenSections = getRouteOpenSections(pathname);
@@ -536,8 +643,8 @@ export default function DashboardSidebar({
     sectionOverrides.pathname === pathname ? sectionOverrides.values : {};
 
   const effectiveOpenItems: Record<string, boolean> = {
-    employees: currentItemOverrides.employees ?? routeOpenItems.employees,
-    management: currentItemOverrides.management ?? routeOpenItems.management,
+    ...routeOpenItems,
+    ...currentItemOverrides,
   };
 
   const effectiveOpenSections: Record<SidebarSectionId, boolean> = {
@@ -602,6 +709,10 @@ export default function DashboardSidebar({
       return pathname === "/afacere/notificari";
     }
 
+    if (href === "/afacere/cereri") {
+      return pathname === "/afacere/cereri";
+    }
+
     if (href === "/cont/schimbare-parola") {
       return pathname.startsWith("/cont/schimbare-parola");
     }
@@ -612,12 +723,9 @@ export default function DashboardSidebar({
 
     return pathname.startsWith(href);
   }
-  function formatUnreadCount(count: number) {
-    if (count > 99) {
-      return "99+";
-    }
 
-    return String(count);
+  function formatBadgeCount(count: number) {
+    return count > 99 ? "99+" : String(count);
   }
 
   return (
@@ -626,6 +734,10 @@ export default function DashboardSidebar({
         {visibleSections.map((section) => {
           const SectionIcon = section.icon;
           const isOpen = effectiveOpenSections[section.id];
+
+          const visibleItems = section.children.filter((item) =>
+            canRoleSeeItem(item, role),
+          );
 
           return (
             <div key={section.id}>
@@ -661,24 +773,23 @@ export default function DashboardSidebar({
 
               {isOpen && (
                 <div className="mt-1 ml-7 space-y-1 border-l border-white/10 pl-4">
-                  {section.children.map((item) => {
+                  {visibleItems.map((item) => {
                     const ItemIcon = item.icon;
-                    const hasChildren =
-                      Array.isArray(item.children) && item.children.length > 0;
 
-                    const itemId =
-                      item.label === "Angajați"
-                        ? "employees"
-                        : item.label === "Management tabele"
-                          ? "management"
-                          : item.label.toLowerCase();
+                    const visibleChildren =
+                      item.children?.filter((child) =>
+                        canRoleSeeSubItem(child, role),
+                      ) ?? [];
+
+                    const hasChildren = visibleChildren.length > 0;
+                    const itemId = getItemId(item);
 
                     const isNestedItemOpen =
                       effectiveOpenItems[itemId] ?? false;
 
                     const isParentActive =
                       hasChildren &&
-                      item.children?.some((child) => isItemActive(child.href));
+                      visibleChildren.some((child) => isItemActive(child.href));
 
                     const isActive =
                       typeof item.href === "string"
@@ -691,6 +802,10 @@ export default function DashboardSidebar({
                     const shouldShowPendingContractsBadge =
                       item.showPendingContractsBadge === true &&
                       pendingContractsCount > 0;
+
+                    const shouldShowPendingRequestsBadge =
+                      item.showPendingRequestsBadge === true &&
+                      pendingRequestsCount > 0;
 
                     if (hasChildren) {
                       return (
@@ -729,7 +844,7 @@ export default function DashboardSidebar({
 
                           {isNestedItemOpen && (
                             <div className="mt-1 ml-5 space-y-1 border-l border-white/10 pl-3">
-                              {item.children?.map((child) => {
+                              {visibleChildren.map((child) => {
                                 const ChildIcon = child.icon;
                                 const isChildActive = isItemActive(child.href);
 
@@ -788,7 +903,7 @@ export default function DashboardSidebar({
                             className="inline-flex min-w-5 shrink-0 items-center justify-center rounded-full bg-green-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-black"
                             aria-label={`${unreadCount} notificări necitite`}
                           >
-                            {formatUnreadCount(unreadCount)}
+                            {formatBadgeCount(unreadCount)}
                           </span>
                         )}
 
@@ -797,7 +912,16 @@ export default function DashboardSidebar({
                             className="inline-flex min-w-5 shrink-0 items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-black"
                             aria-label={`${pendingContractsCount} contracte în așteptare`}
                           >
-                            {formatUnreadCount(pendingContractsCount)}
+                            {formatBadgeCount(pendingContractsCount)}
+                          </span>
+                        )}
+
+                        {shouldShowPendingRequestsBadge && (
+                          <span
+                            className="inline-flex min-w-5 shrink-0 items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-black"
+                            aria-label={`${pendingRequestsCount} cereri în așteptare`}
+                          >
+                            {formatBadgeCount(pendingRequestsCount)}
                           </span>
                         )}
                       </Link>
@@ -817,7 +941,6 @@ export default function DashboardSidebar({
           className="mb-4 flex w-full items-center gap-3 rounded-lg px-3 py-3 text-zinc-300 transition hover:bg-red-500/10 hover:text-red-400"
         >
           <LogOut className="h-5 w-5" />
-
           <span>Logout</span>
         </button>
 
