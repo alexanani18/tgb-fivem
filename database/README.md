@@ -1,65 +1,96 @@
-# Baza de date
+# TGB-FiveM — Database
 
-Acest director conține toate fișierele necesare pentru crearea și inițializarea bazei de date a aplicației.
+Folderul conține schema și valorile standard necesare aplicației.
+
+## Ce face `db:ensure`
+
+Comanda este gândită să ruleze automat înainte de `npm run dev:all`:
+
+1. verifică toate tabelele aplicației;
+2. creează automat tabelele lipsă (`CREATE TABLE IF NOT EXISTS`);
+3. repară diferențele cunoscute din bazele mai vechi (coloane/indexuri lipsă);
+4. verifică seed-urile standard și inserează doar valorile lipsă;
+5. NU șterge contracte, angajați, notificări sau alte date reale.
+
+Prin urmare, comanda poate fi rulată de fiecare developer la fiecare pornire.
 
 ## Structură
 
 ```text
 database/
-├── schema/      # Structura bazei de date
-├── seed/        # Date implicite ale aplicației
-└── scripts/     # Scripturi pentru administrarea bazei de date
+├── schema/     # 13 tabele ale aplicației
+├── seed/       # valori standard, idempotente
+└── scripts/
+    ├── ensure.ts
+    ├── install.ts
+    ├── reset.ts
+    ├── utils.ts
+    └── importDiscordRoles.ts
 ```
 
-## Comenzi disponibile
+## Tabele
 
-### Instalarea bazei de date
+Schema include:
 
-Creează toate tabelele și inserează datele implicite.
+- user_roles
+- user_ranks
+- users
+- employee_details
+- employee_contracts
+- notifications
+- notification_images
+- notification_image_submissions
+- uniforms
+- discord_roles
+- employee_discord_roles
+- employee_documents
+- employee_document_versions
+
+## Seed-uri standard
+
+Seed-urile NU folosesc `DELETE` și NU resetează datele existente.
+
+Sunt garantate cel puțin:
+
+### Roluri
+- GUEST
+- ANGAJAT
+- MAFIA
+- ADMIN
+
+### Rank-uri
+1. Blackfold Chief Executive Officer
+2. Director adjunct
+3. Blackfold Manager
+4. Blackfold Specialist — 15000 $/oră
+5. Blackfold Crew — 10000 $/oră
+
+Rank-urile confidențiale au `salary = 0` și `salary_type = CONFIDENTIAL`.
+
+### Uniforme
+Dacă lipsesc, sunt create configurațiile standard MALE/FEMALE. Dacă au fost deja editate din aplicație, `db:ensure` nu le suprascrie.
+
+### User development
+Dacă nu există username-ul `admin`, seed-ul creează contul development definit în `seed/03_users.sql`.
+
+## Comenzi recomandate
+
+După actualizarea `package.json`:
 
 ```bash
-npm.cmd run db:install
+npm run db:ensure
+npm run db:install
+npm run db:reset
+npm run db:fresh
+npm run dev:all
 ```
 
-### Resetarea bazei de date
+`db:ensure` este comanda sigură pentru pornirea zilnică.
+`db:reset` și `db:fresh` sunt destructive și trebuie folosite intenționat.
 
-Șterge toate tabelele din baza de date.
+## Regula pentru viitor
 
-```bash
-npm.cmd run db:reset
-```
-
-### Resetare completă
-
-Șterge toate tabelele și reinstalează complet baza de date împreună cu datele implicite.
-
-```bash
-npm.cmd run db:fresh
-```
-
-## Schema
-
-Directorul `schema` conține structura bazei de date.
-
-- fiecare tabel este definit într-un fișier separat;
-- fișierele sunt executate automat în ordine alfabetică.
-
-## Seed
-
-Directorul `seed` conține doar datele implicite necesare funcționării aplicației.
-
-Exemple:
-
-- roluri utilizatori;
-- rank-uri;
-- cont administrator;
-- alte configurații implicite.
-
-Datele generate de utilizatori **nu trebuie** adăugate în acest director.
-
-## Observații
-
-- baza de date trebuie creată înainte de rularea scripturilor;
-- conexiunea la baza de date este preluată din fișierul `.env`;
-- orice tabel nou trebuie adăugat în directorul `schema`;
-- dacă tabelul necesită date implicite, se creează și un fișier corespunzător în directorul `seed`.
+Când apare un tabel nou:
+- se adaugă un fișier nou numerotat în `schema/`;
+- dacă are valori obligatorii standard, se adaugă seed idempotent;
+- dacă o bază existentă trebuie actualizată cu o coloană/index nou, se adaugă verificarea în `repairLegacySchema()`.

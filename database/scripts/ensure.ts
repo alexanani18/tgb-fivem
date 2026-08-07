@@ -5,7 +5,7 @@ import { ensureDatabase } from "./utils";
 
 async function main() {
   try {
-    await ensureDatabase("install");
+    await ensureDatabase("startup");
   } catch {
     process.exitCode = 1;
   } finally {

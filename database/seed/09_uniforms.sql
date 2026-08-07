@@ -1,17 +1,6 @@
-DELETE FROM `uniforms`;
-ALTER TABLE `uniforms` AUTO_INCREMENT = 1;
-INSERT INTO `uniforms` (
-    `id`,
-    `type`,
-    `title`
+INSERT IGNORE INTO `uniforms` (
+  `type`, `title`, `image_path`, `store_name`,
+  `shoes_rack`, `pants_rack`, `jacket_rack`, `hat_rack`, `updated_by`
 ) VALUES
-(
-    1,
-    'FEMALE',
-    'Uniformă Fete'
-),
-(
-    2,
-    'MALE',
-    'Uniformă Băieți'
-);
+  ('FEMALE', 'Uniformă Fete', 'uniforms/uniform-1.png', 'Suburban', 45, 175, 1936, 18, NULL),
+  ('MALE', 'Uniformă Băieți', 'uniforms/uniform-2.png', 'Suburban', 620, 178, 1932, 18, NULL);

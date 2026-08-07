@@ -1,19 +1,10 @@
-CREATE TABLE `discord_roles` (
-    `id` INT NOT NULL AUTO_INCREMENT,
-
-    `discord_role_id` VARCHAR(30) NOT NULL,
-    `name` VARCHAR(100) NOT NULL,
-
-    `is_pontaj_role` TINYINT(1) NOT NULL DEFAULT 0,
-
-    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-        ON UPDATE CURRENT_TIMESTAMP,
-
-    PRIMARY KEY (`id`),
-
-    UNIQUE KEY `uq_discord_roles_role_id` (`discord_role_id`)
-)
-ENGINE=InnoDB
-DEFAULT CHARSET=utf8mb4
-COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS `discord_roles` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `discord_role_id` VARCHAR(30) NOT NULL,
+  `name` VARCHAR(100) NOT NULL,
+  `is_pontaj_role` TINYINT(1) NOT NULL DEFAULT 0,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_discord_roles_role_id` (`discord_role_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -3,29 +3,20 @@ import "dotenv/config";
 import { db } from "../../lib/db";
 import { dropTables } from "./utils";
 
-async function resetDatabase() {
+async function main() {
   const connection = await db.getConnection();
 
   try {
-    console.log("");
-    console.log("==================================");
-    console.log("🗑️ Resetting database...");
-    console.log("==================================");
+    console.log("\n==========================================");
+    console.log("🗑️ Resetare bază de date");
+    console.log("==========================================");
 
     await dropTables(connection);
 
-    console.log("");
-    console.log("==================================");
-    console.log("✅ Database reset completed.");
-    console.log("==================================");
+    console.log("\n✅ Toate tabelele aplicației au fost șterse.\n");
   } catch (error) {
-    console.error("");
-    console.error("==================================");
-    console.error("❌ Database reset failed.");
-    console.error("==================================");
-
+    console.error("\n❌ Resetarea bazei de date a eșuat.");
     console.error(error);
-
     process.exitCode = 1;
   } finally {
     connection.release();
@@ -33,4 +24,4 @@ async function resetDatabase() {
   }
 }
 
-void resetDatabase();
+void main();
