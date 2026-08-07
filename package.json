@@ -9,11 +9,15 @@
     "lint": "eslint",
     "server": "tsx lib/index.ts",
     "dev:all": "concurrently \"npm run server\" \"npm run dev\"",
-    "create-user": "tsx lib/default-user.ts"
+    "db:install": "tsx database/scripts/install.ts",
+    "db:reset": "tsx database/scripts/reset.ts",
+    "db:fresh": "npm.cmd run db:reset && npm.cmd run db:install",
+    "discord:import-roles": "tsx database/scripts/importDiscordRoles.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
+    "discord.js": "^14.27.0",
     "dotenv": "^17.4.2",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",

@@ -30,12 +30,26 @@ interface UniformCardProps {
 export default function UniformCard({ uniform, isAdmin, onUpdated, }: UniformCardProps) {
   const [isEditing, setIsEditing] = useState(false);
 
-  const [storeName, setStoreName] = useState(uniform.store_name);
+  const [storeName, setStoreName] = useState(
+    uniform.store_name ?? "",
+  );
 
-  const [shoesRack, setShoesRack] = useState(String(uniform.shoes_rack));
-  const [pantsRack, setPantsRack] = useState(String(uniform.pants_rack));
-  const [jacketRack, setJacketRack] = useState(String(uniform.jacket_rack));
-  const [hatRack, setHatRack] = useState(String(uniform.hat_rack));
+  const [shoesRack, setShoesRack] = useState(
+    uniform.shoes_rack?.toString() ?? "",
+  );
+
+  const [pantsRack, setPantsRack] = useState(
+    uniform.pants_rack?.toString() ?? "",
+  );
+
+  const [jacketRack, setJacketRack] = useState(
+    uniform.jacket_rack?.toString() ?? "",
+  );
+
+  const [hatRack, setHatRack] = useState(
+    uniform.hat_rack?.toString() ?? "",
+  );
+
   const [imagePath, setImagePath] = useState(uniform.image_path);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -95,11 +109,11 @@ export default function UniformCard({ uniform, isAdmin, onUpdated, }: UniformCar
         onUpdated(imageData.uniform);
 
       }
-      setStoreName(data.uniform.store_name);
-      setShoesRack(String(data.uniform.shoes_rack));
-      setPantsRack(String(data.uniform.pants_rack));
-      setJacketRack(String(data.uniform.jacket_rack));
-      setHatRack(String(data.uniform.hat_rack));
+      setStoreName(data.uniform.store_name ?? "");
+      setShoesRack(data.uniform.shoes_rack?.toString() ?? "");
+      setPantsRack(data.uniform.pants_rack?.toString() ?? "");
+      setJacketRack(data.uniform.jacket_rack?.toString() ?? "");
+      setHatRack(data.uniform.hat_rack?.toString() ?? "");
       setUpdatedAt(data.uniform.updated_at);
       onUpdated(data.uniform);
       setIsEditing(false);
@@ -315,11 +329,11 @@ export default function UniformCard({ uniform, isAdmin, onUpdated, }: UniformCar
                   <button
                     type="button"
                     onClick={() => {
-                      setStoreName(uniform.store_name);
-                      setShoesRack(String(uniform.shoes_rack));
-                      setPantsRack(String(uniform.pants_rack));
-                      setJacketRack(String(uniform.jacket_rack));
-                      setHatRack(String(uniform.hat_rack));
+                      setStoreName(uniform.store_name ?? "");
+                      setShoesRack(uniform.shoes_rack?.toString() ?? "");
+                      setPantsRack(uniform.pants_rack?.toString() ?? "");
+                      setJacketRack(uniform.jacket_rack?.toString() ?? "");
+                      setHatRack(uniform.hat_rack?.toString() ?? "");
                       setUpdatedAt(uniform.updated_at);
                       setImagePath(uniform.image_path);
                       setSelectedImage(null);
