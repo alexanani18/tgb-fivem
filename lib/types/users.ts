@@ -13,7 +13,7 @@ export type EmployeeStatus =
 
 export type ContractStatus =
   | "DRAFT"
-  | "PENDING"
+  | "PENDING_REVIEW"
   | "APPROVED"
   | "REJECTED"
-  | "PENDING_REVIEW";
+  | "BLOCKED";

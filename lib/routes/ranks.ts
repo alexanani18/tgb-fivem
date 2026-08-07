@@ -1,29 +1,8 @@
 import { Router } from "express";
-import type { ResultSetHeader, RowDataPacket } from "mysql2";
-
-import { db } from "../db";
+import * as ranksDatabase from "../database/ranks";
 import { requireAdmin } from "../services/requireAdmin";
 
 const router = Router();
-
-type SalaryType = "PUBLIC" | "CONFIDENTIAL";
-
-interface RankRow extends RowDataPacket {
-  id: number;
-  name: string;
-  salary: number;
-  salary_type: SalaryType;
-  sort_order: number;
-  users_count: number | string;
-}
-
-interface CountRow extends RowDataPacket {
-  users_count: number | string;
-}
-
-interface ExistingRankRow extends RowDataPacket {
-  id: number;
-}
 
 /**
  * GET /ranks/admin
@@ -31,35 +10,7 @@ interface ExistingRankRow extends RowDataPacket {
  */
 router.get("/admin", requireAdmin, async (_req, res) => {
   try {
-    const [rows] = await db.query<RankRow[]>(`
-      SELECT
-        ur.id,
-        ur.name,
-        ur.salary,
-        ur.salary_type,
-        ur.sort_order,
-        COUNT(u.id) AS users_count
-      FROM user_ranks ur
-      LEFT JOIN users u ON u.user_rank_id = ur.id
-      GROUP BY
-        ur.id,
-        ur.name,
-        ur.salary,
-        ur.salary_type,
-        ur.sort_order
-      ORDER BY
-        ur.sort_order ASC,
-        ur.name ASC
-    `);
-
-    const ranks = rows.map((rank) => ({
-      id: Number(rank.id),
-      name: rank.name,
-      salary: Number(rank.salary),
-      salary_type: rank.salary_type,
-      sort_order: Number(rank.sort_order),
-      users_count: Number(rank.users_count),
-    }));
+    const ranks = await ranksDatabase.getRanks();
 
     return res.status(200).json({
       success: true,
@@ -119,42 +70,30 @@ router.post("/admin", requireAdmin, async (req, res) => {
       });
     }
 
-    const [existingRows] = await db.query<ExistingRankRow[]>(
-      `
-        SELECT id
-        FROM user_ranks
-        WHERE LOWER(name) = LOWER(?)
-           OR sort_order = ?
-        LIMIT 1
-      `,
-      [name, sortOrder],
+    const exists = await ranksDatabase.rankExists(
+      name,
+      sortOrder,
     );
 
-    if (existingRows.length > 0) {
+    if (exists) {
       return res.status(409).json({
         success: false,
         message: "Există deja un rank cu același nume sau cu aceeași ordine.",
       });
     }
 
-    const [result] = await db.execute<ResultSetHeader>(
-      `
-        INSERT INTO user_ranks (
-          name,
-          salary,
-          salary_type,
-          sort_order
-        )
-        VALUES (?, ?, ?, ?)
-      `,
-      [name, salary, salaryType, sortOrder],
-    );
+    const rankId = await ranksDatabase.createRank({
+      name,
+      salary,
+      salaryType,
+      sortOrder,
+    });
 
     return res.status(201).json({
       success: true,
       message: "Rank-ul a fost adăugat cu succes.",
       rank: {
-        id: result.insertId,
+        id: rankId,
         name,
         salary,
         salary_type: salaryType,
@@ -225,38 +164,22 @@ router.patch("/admin/:rankId", requireAdmin, async (req, res) => {
       });
     }
 
-    const [rankRows] = await db.query<ExistingRankRow[]>(
-      `
-        SELECT id
-        FROM user_ranks
-        WHERE id = ?
-        LIMIT 1
-      `,
-      [rankId],
-    );
+    const exists = await ranksDatabase.rankExistsById(rankId);
 
-    if (rankRows.length === 0) {
+    if (!exists) {
       return res.status(404).json({
         success: false,
         message: "Rank-ul nu a fost găsit.",
       });
     }
 
-    const [duplicateRows] = await db.query<ExistingRankRow[]>(
-      `
-        SELECT id
-        FROM user_ranks
-        WHERE id <> ?
-          AND (
-            LOWER(name) = LOWER(?)
-            OR sort_order = ?
-          )
-        LIMIT 1
-      `,
-      [rankId, name, sortOrder],
+    const duplicate = await ranksDatabase.rankNameOrSortOrderExists(
+      rankId,
+      name,
+      sortOrder,
     );
 
-    if (duplicateRows.length > 0) {
+    if (duplicate) {
       return res.status(409).json({
         success: false,
         message:
@@ -264,27 +187,14 @@ router.patch("/admin/:rankId", requireAdmin, async (req, res) => {
       });
     }
 
-    await db.execute<ResultSetHeader>(
-      `
-        UPDATE user_ranks
-        SET
-          name = ?,
-          salary = ?,
-          salary_type = ?,
-          sort_order = ?
-        WHERE id = ?
-      `,
-      [name, salary, salaryType, sortOrder, rankId],
-    );
+    await ranksDatabase.updateRank(rankId, {
+      name,
+      salary,
+      salaryType,
+      sortOrder,
+    });
 
-    const [countRows] = await db.query<CountRow[]>(
-      `
-        SELECT COUNT(*) AS users_count
-        FROM users
-        WHERE user_rank_id = ?
-      `,
-      [rankId],
-    );
+    const usersCount = await ranksDatabase.countUsersWithRank(rankId);
 
     return res.status(200).json({
       success: true,
@@ -295,7 +205,7 @@ router.patch("/admin/:rankId", requireAdmin, async (req, res) => {
         salary,
         salary_type: salaryType,
         sort_order: sortOrder,
-        users_count: Number(countRows[0]?.users_count ?? 0),
+        users_count: usersCount,
       },
     });
   } catch (error) {
@@ -309,9 +219,9 @@ router.patch("/admin/:rankId", requireAdmin, async (req, res) => {
 });
 
 /**
- * DELETE /ranks/admin/:rankId
- * Șterge un rank doar dacă nu este atribuit niciunui utilizator.
- */
+* DELETE /ranks/admin/:rankId
+* Șterge un rank doar dacă nu este atribuit niciunui utilizator.
+*/
 router.delete("/admin/:rankId", requireAdmin, async (req, res) => {
   try {
     const rankId = Number(req.params.rankId);
@@ -323,33 +233,17 @@ router.delete("/admin/:rankId", requireAdmin, async (req, res) => {
       });
     }
 
-    const [rankRows] = await db.query<ExistingRankRow[]>(
-      `
-        SELECT id
-        FROM user_ranks
-        WHERE id = ?
-        LIMIT 1
-      `,
-      [rankId],
-    );
+    const exists = await ranksDatabase.rankExistsById(rankId);
 
-    if (rankRows.length === 0) {
+
+    if (!exists) {
       return res.status(404).json({
         success: false,
         message: "Rank-ul nu a fost găsit.",
       });
     }
 
-    const [countRows] = await db.query<CountRow[]>(
-      `
-        SELECT COUNT(*) AS users_count
-        FROM users
-        WHERE user_rank_id = ?
-      `,
-      [rankId],
-    );
-
-    const usersCount = Number(countRows[0]?.users_count ?? 0);
+    const usersCount = await ranksDatabase.countUsersWithRank(rankId);
 
     if (usersCount > 0) {
       return res.status(409).json({
@@ -361,13 +255,7 @@ router.delete("/admin/:rankId", requireAdmin, async (req, res) => {
       });
     }
 
-    await db.execute<ResultSetHeader>(
-      `
-        DELETE FROM user_ranks
-        WHERE id = ?
-      `,
-      [rankId],
-    );
+    await ranksDatabase.deleteRank(rankId);
 
     return res.status(200).json({
       success: true,
