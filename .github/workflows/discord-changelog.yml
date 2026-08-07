@@ -5,6 +5,11 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
 jobs:
   discord-notification:
     runs-on: ubuntu-latest
@@ -12,69 +17,264 @@ jobs:
     steps:
       - name: Send changelog to Discord
         env:
+          GH_TOKEN: ${{ github.token }}
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+
           REPOSITORY: ${{ github.repository }}
           BRANCH: ${{ github.ref_name }}
           AUTHOR: ${{ github.actor }}
+
+          COMMIT_SHA: ${{ github.sha }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
           COMMIT_URL: ${{ github.event.head_commit.url }}
+
           TZ: Europe/Bucharest
 
         run: |
-          PAYLOAD=$(jq -n \
-            --arg repository "$REPOSITORY" \
-            --arg branch "$BRANCH" \
-            --arg author "$AUTHOR" \
-            --arg message "$COMMIT_MESSAGE" \
-            --arg url "$COMMIT_URL" \
-            --arg time "$(date '+%d.%m.%Y %H:%M')" \
-            '{
-              username: "GitHub Changelog",
-              embeds: [
-                {
-                  title: "🚀 Actualizare nouă",
-                  color: 5763719,
-                  fields: [
-                    {
-                      name: "📝 Commit",
-                      value: $message,
-                      inline: false
-                    },
-                    {
-                      name: "👤 Autor",
-                      value: $author,
-                      inline: true
-                    },
-                    {
-                      name: "🌿 Branch",
-                      value: $branch,
-                      inline: true
-                    },
-                    {
-                      name: "📦 Repository",
-                      value: $repository,
-                      inline: false
-                    },
-                    {
-                      name: "🔗 Commit",
-                      value: ("[View on GitHub](" + $url + ")"),
-                      inline: false
-                    },
-                    {
-                      name: "🕒 Ora",
-                      value: $time,
-                      inline: false
-                    }
-                  ],
-                  footer: {
-                    text: "GitHub Changelog"
-                  }
-                }
-              ]
-            }')
+          set -e
 
-          curl --fail-with-body \
-            -H "Content-Type: application/json" \
-            -X POST \
-            -d "$PAYLOAD" \
-            "$DISCORD_WEBHOOK"
+          echo "🔎 Caut Pull Request-ul asociat commit-ului..."
+
+          PR_JSON=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/$REPOSITORY/commits/$COMMIT_SHA/pulls")
+
+          PR_NUMBER=$(echo "$PR_JSON" | jq -r '.[0].number // empty')
+          PR_URL=$(echo "$PR_JSON" | jq -r '.[0].html_url // empty')
+          SOURCE_BRANCH=$(echo "$PR_JSON" | jq -r '.[0].head.ref // empty')
+          PR_AUTHOR=$(echo "$PR_JSON" | jq -r '.[0].user.login // empty')
+          PR_BODY=$(echo "$PR_JSON" | jq -r '.[0].body // empty')
+
+          CHANGELOG_FILE=$(mktemp)
+
+          if [ -n "$PR_NUMBER" ]; then
+            echo "✅ Pull Request găsit: #$PR_NUMBER"
+            echo "📝 Caut primul comentariu din Conversation..."
+
+            COMMENTS=$(gh api \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/$REPOSITORY/issues/$PR_NUMBER/comments?per_page=100")
+
+            FIRST_COMMENT=$(echo "$COMMENTS" | jq -r '
+              map(select(.user.type != "Bot"))
+              | .[0].body // empty
+            ')
+
+            if [ -n "$FIRST_COMMENT" ]; then
+              echo "✅ Primul comentariu găsit."
+              printf '%s' "$FIRST_COMMENT" > "$CHANGELOG_FILE"
+
+            elif [ -n "$PR_BODY" ]; then
+              echo "⚠️ PR-ul nu are comentarii."
+              echo "📝 Folosesc descrierea Pull Request-ului."
+              printf '%s' "$PR_BODY" > "$CHANGELOG_FILE"
+
+            else
+              echo "⚠️ PR-ul nu are comentariu sau descriere."
+              echo "📝 Folosesc mesajul commit-ului."
+              printf '%s' "$COMMIT_MESSAGE" > "$CHANGELOG_FILE"
+            fi
+
+          else
+            echo "⚠️ Nu am găsit Pull Request asociat."
+            echo "📝 Folosesc mesajul commit-ului."
+
+            printf '%s' "$COMMIT_MESSAGE" > "$CHANGELOG_FILE"
+          fi
+
+          if [ -z "$PR_URL" ]; then
+            PR_URL="$COMMIT_URL"
+          fi
+
+          if [ -z "$SOURCE_BRANCH" ]; then
+            SOURCE_BRANCH="$BRANCH"
+          fi
+
+          if [ -z "$PR_AUTHOR" ]; then
+            PR_AUTHOR="$AUTHOR"
+          fi
+
+          export CHANGELOG_FILE
+          export PR_NUMBER
+          export PR_URL
+          export SOURCE_BRANCH
+          export PR_AUTHOR
+
+          PAYLOAD_DIR=$(mktemp -d)
+          export PAYLOAD_DIR
+
+          python3 <<'PYTHON'
+          import json
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          changelog_file = os.environ["CHANGELOG_FILE"]
+          payload_dir = os.environ["PAYLOAD_DIR"]
+
+          repository = os.environ["REPOSITORY"]
+          branch = os.environ["SOURCE_BRANCH"]
+          author = os.environ["PR_AUTHOR"]
+
+          pr_number = os.environ.get("PR_NUMBER", "")
+          pr_url = os.environ["PR_URL"]
+
+          with open(changelog_file, "r", encoding="utf-8") as file:
+              changelog = file.read().strip()
+
+          if not changelog:
+              changelog = "Nu a fost furnizat un changelog."
+
+          # Discord permite max 4096 caractere în description.
+          # Folosim 3800 pentru puțin spațiu de siguranță.
+          MAX_LENGTH = 3800
+
+          def split_text(text):
+              lines = text.splitlines()
+
+              chunks = []
+              current = ""
+
+              for line in lines:
+                  candidate = f"{current}\n{line}".strip() if current else line
+
+                  if len(candidate) <= MAX_LENGTH:
+                      current = candidate
+                      continue
+
+                  if current:
+                      chunks.append(current)
+                      current = ""
+
+                  while len(line) > MAX_LENGTH:
+                      chunks.append(line[:MAX_LENGTH])
+                      line = line[MAX_LENGTH:]
+
+                  current = line
+
+              if current:
+                  chunks.append(current)
+
+              return chunks or ["Nu a fost furnizat un changelog."]
+
+          chunks = split_text(changelog)
+
+          now = datetime.now(
+              ZoneInfo("Europe/Bucharest")
+          ).strftime("%d.%m.%Y %H:%M")
+
+          total = len(chunks)
+
+          for index, chunk in enumerate(chunks, start=1):
+
+              if index == 1:
+                  title = "🚀 TGB-FiveM — Release Changelog"
+
+                  fields = [
+                      {
+                          "name": "👤 Autor",
+                          "value": author,
+                          "inline": True
+                      },
+                      {
+                          "name": "🌿 Branch",
+                          "value": branch,
+                          "inline": True
+                      },
+                      {
+                          "name": "📦 Repository",
+                          "value": repository,
+                          "inline": False
+                      }
+                  ]
+
+                  if pr_number:
+                      fields.append({
+                          "name": "🔗 Pull Request",
+                          "value": f"[View PR #{pr_number}]({pr_url})",
+                          "inline": False
+                      })
+                  else:
+                      fields.append({
+                          "name": "🔗 Commit",
+                          "value": f"[View on GitHub]({pr_url})",
+                          "inline": False
+                      })
+
+                  fields.append({
+                      "name": "🕒 Ora",
+                      "value": now,
+                      "inline": False
+                  })
+
+              else:
+                  title = f"📋 Release Changelog — {index}/{total}"
+                  fields = []
+
+              embed = {
+                  "title": title,
+
+                  # Blackfold Gold: #B8904D
+                  "color": 12095565,
+
+                  "description": chunk,
+
+                  "fields": fields,
+
+                  "footer": {
+                      "text": (
+                          "TGB-FiveM • Release Changelog"
+                          + (
+                              f" • {index}/{total}"
+                              if total > 1
+                              else ""
+                          )
+                      )
+                  }
+              }
+
+              payload = {
+                  "username": "GitHub Changelog",
+                  "embeds": [embed]
+              }
+
+              file_path = os.path.join(
+                  payload_dir,
+                  f"{index:03d}.json"
+              )
+
+              with open(
+                  file_path,
+                  "w",
+                  encoding="utf-8"
+              ) as file:
+                  json.dump(
+                      payload,
+                      file,
+                      ensure_ascii=False
+                  )
+
+          print(f"✅ Au fost generate {total} mesaj(e) Discord.")
+          PYTHON
+
+          echo "📨 Trimit changelog-ul către Discord..."
+
+          for PAYLOAD_FILE in "$PAYLOAD_DIR"/*.json; do
+
+            curl --fail-with-body \
+              --retry 3 \
+              --retry-delay 1 \
+              -H "Content-Type: application/json" \
+              -H "User-Agent: TGB-FiveM-GitHub-Changelog/1.0" \
+              -X POST \
+              --data-binary "@$PAYLOAD_FILE" \
+              "$DISCORD_WEBHOOK"
+
+            echo ""
+            echo "✅ Mesaj Discord trimis."
+
+            sleep 1
+          done
+
+          echo ""
+          echo "🚀 Release changelog trimis cu succes."
