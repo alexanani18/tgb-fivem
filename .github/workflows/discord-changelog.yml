@@ -5,6 +5,11 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
 jobs:
   discord-notification:
     runs-on: ubuntu-latest
@@ -12,69 +17,255 @@ jobs:
     steps:
       - name: Send changelog to Discord
         env:
+          GH_TOKEN: ${{ github.token }}
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+
           REPOSITORY: ${{ github.repository }}
           BRANCH: ${{ github.ref_name }}
           AUTHOR: ${{ github.actor }}
+
+          COMMIT_SHA: ${{ github.sha }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
           COMMIT_URL: ${{ github.event.head_commit.url }}
+
           TZ: Europe/Bucharest
 
         run: |
-          PAYLOAD=$(jq -n \
-            --arg repository "$REPOSITORY" \
-            --arg branch "$BRANCH" \
-            --arg author "$AUTHOR" \
-            --arg message "$COMMIT_MESSAGE" \
-            --arg url "$COMMIT_URL" \
-            --arg time "$(date '+%d.%m.%Y %H:%M')" \
-            '{
-              username: "GitHub Changelog",
-              embeds: [
-                {
-                  title: "🚀 Actualizare nouă",
-                  color: 5763719,
-                  fields: [
-                    {
-                      name: "📝 Commit",
-                      value: $message,
-                      inline: false
-                    },
-                    {
-                      name: "👤 Autor",
-                      value: $author,
-                      inline: true
-                    },
-                    {
-                      name: "🌿 Branch",
-                      value: $branch,
-                      inline: true
-                    },
-                    {
-                      name: "📦 Repository",
-                      value: $repository,
-                      inline: false
-                    },
-                    {
-                      name: "🔗 Commit",
-                      value: ("[View on GitHub](" + $url + ")"),
-                      inline: false
-                    },
-                    {
-                      name: "🕒 Ora",
-                      value: $time,
-                      inline: false
-                    }
-                  ],
-                  footer: {
-                    text: "GitHub Changelog"
-                  }
-                }
-              ]
-            }')
+          echo "🔎 Caut Pull Request-ul asociat commit-ului..."
 
-          curl --fail-with-body \
-            -H "Content-Type: application/json" \
-            -X POST \
-            -d "$PAYLOAD" \
-            "$DISCORD_WEBHOOK"
+          PR_JSON=$(gh api \
+            "/repos/$REPOSITORY/commits/$COMMIT_SHA/pulls")
+
+          PR_NUMBER=$(echo "$PR_JSON" | jq -r '.[0].number // empty')
+          PR_URL=$(echo "$PR_JSON" | jq -r '.[0].html_url // empty')
+          SOURCE_BRANCH=$(echo "$PR_JSON" | jq -r '.[0].head.ref // empty')
+          PR_AUTHOR=$(echo "$PR_JSON" | jq -r '.[0].user.login // empty')
+
+          CHANGELOG_FILE=$(mktemp)
+
+          if [ -n "$PR_NUMBER" ]; then
+            echo "✅ Pull Request găsit: #$PR_NUMBER"
+            echo "📝 Caut primul comentariu..."
+
+            gh api \
+              "/repos/$REPOSITORY/issues/$PR_NUMBER/comments?per_page=100" \
+              --jq '.[0].body // empty' \
+              > "$CHANGELOG_FILE"
+          else
+            echo "⚠️ Nu am găsit Pull Request asociat."
+          fi
+
+          if [ ! -s "$CHANGELOG_FILE" ]; then
+            echo "⚠️ PR-ul nu are comentarii. Folosesc mesajul commit-ului."
+            printf '%s' "$COMMIT_MESSAGE" > "$CHANGELOG_FILE"
+          else
+            echo "✅ Changelog găsit în primul comentariu."
+          fi
+
+          if [ -z "$PR_URL" ]; then
+            PR_URL="$COMMIT_URL"
+          fi
+
+          if [ -z "$SOURCE_BRANCH" ]; then
+            SOURCE_BRANCH="$BRANCH"
+          fi
+
+          if [ -z "$PR_AUTHOR" ]; then
+            PR_AUTHOR="$AUTHOR"
+          fi
+
+          export CHANGELOG_FILE
+          export PR_NUMBER
+          export PR_URL
+          export SOURCE_BRANCH
+          export PR_AUTHOR
+
+          python3 <<'PYTHON'
+          import json
+          import os
+          import time
+          import urllib.request
+          import urllib.error
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          webhook = os.environ["DISCORD_WEBHOOK"]
+          repository = os.environ["REPOSITORY"]
+
+          branch = os.environ.get("SOURCE_BRANCH") or os.environ.get("BRANCH", "main")
+          author = os.environ.get("PR_AUTHOR") or os.environ.get("AUTHOR", "Unknown")
+          pr_number = os.environ.get("PR_NUMBER", "")
+          pr_url = os.environ.get("PR_URL", "")
+
+          changelog_file = os.environ["CHANGELOG_FILE"]
+
+          with open(changelog_file, "r", encoding="utf-8") as file:
+              changelog = file.read().strip()
+
+          if not changelog:
+              changelog = "Nu a fost furnizat un changelog."
+
+          # -------------------------------------------------------------
+          # Discord limitează description-ul unui embed la 4096 caractere.
+          # Folosim o limită mai mică pentru siguranță.
+          # -------------------------------------------------------------
+
+          MAX_LENGTH = 3500
+
+          def split_changelog(text: str) -> list[str]:
+              paragraphs = text.split("\n")
+
+              chunks = []
+              current = ""
+
+              for paragraph in paragraphs:
+                  candidate = (
+                      f"{current}\n{paragraph}"
+                      if current
+                      else paragraph
+                  )
+
+                  if len(candidate) <= MAX_LENGTH:
+                      current = candidate
+                      continue
+
+                  if current:
+                      chunks.append(current)
+                      current = ""
+
+                  while len(paragraph) > MAX_LENGTH:
+                      chunks.append(paragraph[:MAX_LENGTH])
+                      paragraph = paragraph[MAX_LENGTH:]
+
+                  current = paragraph
+
+              if current:
+                  chunks.append(current)
+
+              return chunks or ["Nu a fost furnizat un changelog."]
+
+          chunks = split_changelog(changelog)
+
+          now = datetime.now(
+              ZoneInfo("Europe/Bucharest")
+          ).strftime("%d.%m.%Y %H:%M")
+
+          total_parts = len(chunks)
+
+          for index, chunk in enumerate(chunks):
+              part_number = index + 1
+
+              if index == 0:
+                  title = "🚀 TGB-FiveM — Release Changelog"
+
+                  fields = [
+                      {
+                          "name": "👤 Autor",
+                          "value": author,
+                          "inline": True
+                      },
+                      {
+                          "name": "🌿 Branch",
+                          "value": branch,
+                          "inline": True
+                      },
+                      {
+                          "name": "📦 Repository",
+                          "value": repository,
+                          "inline": False
+                      }
+                  ]
+
+                  if pr_number:
+                      fields.append({
+                          "name": "🔗 Pull Request",
+                          "value": f"[View PR #{pr_number}]({pr_url})",
+                          "inline": False
+                      })
+                  else:
+                      fields.append({
+                          "name": "🔗 Commit",
+                          "value": f"[View on GitHub]({pr_url})",
+                          "inline": False
+                      })
+
+                  fields.append({
+                      "name": "🕒 Ora",
+                      "value": now,
+                      "inline": False
+                  })
+
+              else:
+                  title = (
+                      f"📋 Changelog — continuare "
+                      f"{part_number}/{total_parts}"
+                  )
+
+                  fields = []
+
+              embed = {
+                  "title": title,
+
+                  # #B8904D - culoarea Blackfold
+                  "color": 12095565,
+
+                  "description": chunk,
+
+                  "fields": fields,
+
+                  "footer": {
+                      "text": (
+                          f"TGB-FiveM • GitHub Changelog"
+                          + (
+                              f" • {part_number}/{total_parts}"
+                              if total_parts > 1
+                              else ""
+                          )
+                      )
+                  }
+              }
+
+              payload = {
+                  "username": "GitHub Changelog",
+                  "embeds": [embed]
+              }
+
+              data = json.dumps(
+                  payload,
+                  ensure_ascii=False
+              ).encode("utf-8")
+
+              request = urllib.request.Request(
+                  webhook,
+                  data=data,
+                  headers={
+                      "Content-Type": "application/json"
+                  },
+                  method="POST"
+              )
+
+              try:
+                  with urllib.request.urlopen(request) as response:
+                      print(
+                          f"✅ Discord message "
+                          f"{part_number}/{total_parts} trimis."
+                      )
+
+              except urllib.error.HTTPError as error:
+                  body = error.read().decode(
+                      "utf-8",
+                      errors="replace"
+                  )
+
+                  print(
+                      f"❌ Discord HTTP {error.code}: {body}"
+                  )
+
+                  raise
+
+              # Evităm rate-limit dacă avem un changelog foarte mare.
+              if part_number < total_parts:
+                  time.sleep(0.7)
+
+          print("🚀 Changelog Discord trimis cu succes.")
+          PYTHON
