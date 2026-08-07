@@ -8,6 +8,9 @@ declare module "express-session" {
       id: number;
       username: string;
       role: UserRole;
+      rank: string | null;
+      firstName: string | null;
+      lastName: string | null;
     };
   }
 }

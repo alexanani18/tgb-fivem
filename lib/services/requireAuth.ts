@@ -1,16 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import type { RowDataPacket } from "mysql2";
-
-import { db } from "../db";
-
-type UserRole = "ADMIN" | "ANGAJAT" | "MAFIA" | "GUEST" | "DEV";
-
-interface ActiveUserRow extends RowDataPacket {
-  id: number;
-  username: string;
-  user_role: UserRole;
-  is_active: number;
-}
+import * as authDatabase from "../database/auth";
 
 export async function requireAuth(
   req: Request,
@@ -27,23 +16,7 @@ export async function requireAuth(
       });
     }
 
-    const [users] = await db.execute<ActiveUserRow[]>(
-      `
-        SELECT
-          u.id,
-          u.username,
-          ur.name AS user_role,
-          u.is_active
-        FROM users u
-        INNER JOIN user_roles ur
-          ON ur.id = u.user_role_id
-        WHERE u.id = ?
-        LIMIT 1
-      `,
-      [sessionUser.id],
-    );
-
-    const user = users[0];
+    const user = await authDatabase.findById(sessionUser.id);
 
     if (!user) {
       req.session.destroy(() => undefined);
@@ -67,6 +40,9 @@ export async function requireAuth(
       id: user.id,
       username: user.username,
       role: user.user_role,
+      rank: user.user_rank,
+      firstName: user.first_name,
+      lastName: user.last_name,
     };
 
     return next();

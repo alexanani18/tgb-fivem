@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
   AlertCircle,
@@ -159,6 +159,16 @@ export default function EmployeeDetailsPage() {
   const params = useParams<{ userId: string }>();
   const router = useRouter();
   const userId = params.userId;
+
+  const searchParams = useSearchParams();
+
+  const cameFromArchive = searchParams.get("from") === "archive";
+
+  const backHref = cameFromArchive
+    ? "/afacere/angajati/arhiva"
+    : "/afacere/angajati";
+
+  const backLabel = cameFromArchive ? "Înapoi la arhivă" : "Înapoi la angajați";
 
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [ranks, setRanks] = useState<Rank[]>([]);
@@ -478,15 +488,15 @@ export default function EmployeeDetailsPage() {
   return (
     <AppShell backgroundImage="/img/business-image.png">
       <div className="p-8">
-        <div className="mx-auto max-w-7xl rounded-2xl border border-white/10 bg-black/40 p-8 backdrop-blur-md">
+        <div className="mx-auto w-full rounded-2xl border border-white/10 bg-black/40 p-8 backdrop-blur-md">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <Link
-                href="/afacere/angajati"
+                href={backHref}
                 className="inline-flex items-center gap-2 text-sm text-zinc-400 transition hover:text-white"
               >
                 <ArrowLeft size={17} />
-                Înapoi la angajați
+                {backLabel}
               </Link>
 
               <p className="mt-6 text-sm tracking-[0.2em] text-[#B8904D] uppercase">
@@ -498,7 +508,7 @@ export default function EmployeeDetailsPage() {
                   ? `${employee.contract.firstName || employee.username} ${
                       employee.contract.lastName
                     }`.trim()
-                  : "Angajat"}
+                  : "Arhiva"}
               </h1>
 
               {employee ? (

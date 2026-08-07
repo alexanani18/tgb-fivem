@@ -14,10 +14,10 @@ import { cleanupExpiredNotifications } from "./services/notificationCleanup";
 import userRoutes from "./routes/users";
 import contractRoutes from "./routes/contracts";
 import uniformRoutes from "./routes/uniforms";
+import ranksRouter from "./routes/ranks";
+import { startupDiscord } from "./discord/startup";
 
 const app = express();
-
-const PORT = Number(process.env.API_PORT ?? 5000);
 
 const SESSION_SECRET = process.env.SESSION_SECRET;
 
@@ -27,6 +27,8 @@ if (!SESSION_SECRET) {
 }
 
 app.use(express.json());
+
+const PORT = Number(process.env.API_PORT) || 5000;
 
 app.use(express.urlencoded({ extended: true }));
 
@@ -43,10 +45,13 @@ app.use(
 );
 
 app.use(
+  "/generated-contracts",
+  express.static(path.join(process.cwd(), "public", "generated-contracts")),
+);
+
+app.use(
   "/uniforms",
-  express.static(
-    path.join(process.cwd(), "public", "uniforms"),
-  ),
+  express.static(path.join(process.cwd(), "public", "uniforms")),
 );
 
 app.use(
@@ -84,6 +89,7 @@ app.use("/api/notification-submissions", notificationSubmissionRoutes);
 app.use("/users", userRoutes);
 app.use("/contracts", contractRoutes);
 app.use("/api/uniforms", uniformRoutes);
+app.use("/ranks", ranksRouter);
 
 /*
 |--------------------------------------------------------------------------
@@ -138,6 +144,7 @@ async function startServer() {
     connection.release();
 
     console.log("✅ Database connected successfully.");
+    await startupDiscord();
 
     app.listen(PORT, () => {
       console.log(`🚀 Express API running on http://localhost:${PORT}`);

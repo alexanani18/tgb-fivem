@@ -8,12 +8,18 @@
     "start": "next start",
     "lint": "eslint",
     "server": "tsx lib/index.ts",
-    "dev:all": "concurrently \"npm run server\" \"npm run dev\"",
-    "create-user": "tsx lib/default-user.ts"
+    "server:dev": "tsx watch lib/index.ts",
+    "dev:all": "npm run db:ensure && concurrently --kill-others-on-fail --names \"API,WEB\" \"npm run server:dev\" \"npm run dev\"",
+    "db:ensure": "tsx database/scripts/ensure.ts",
+    "db:install": "tsx database/scripts/install.ts",
+    "db:reset": "tsx database/scripts/reset.ts",
+    "db:fresh": "npm run db:reset && npm run db:install",
+    "discord:import-roles": "tsx database/scripts/importDiscordRoles.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
+    "discord.js": "^14.27.0",
     "dotenv": "^17.4.2",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
@@ -23,8 +29,10 @@
     "mysql2": "^3.23.2",
     "next": "16.2.12",
     "nodemon": "^3.1.14",
+    "pdf-lib": "^1.17.1",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

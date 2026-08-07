@@ -51,6 +51,18 @@ interface EmployeesResponse {
   users?: Employee[];
 }
 
+interface Rank {
+  id: number;
+  name: string;
+  sortOrder: number;
+}
+
+interface RanksResponse {
+  success: boolean;
+  message?: string;
+  ranks?: Rank[];
+}
+
 interface UpdateEmployeeDetailsResponse {
   success: boolean;
   message?: string;
@@ -92,6 +104,7 @@ function getUpdateKey(employeeId: number, field: BooleanEmployeeField): string {
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [ranks, setRanks] = useState<Rank[]>([]);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState("");
@@ -151,29 +164,53 @@ export default function EmployeesPage() {
       setErrorMessage("");
       setUpdateErrorMessage("");
 
-      const response = await fetch(`${API_URL}/users`, {
-        method: "GET",
-        credentials: "include",
-        cache: "no-store",
-      });
+      const [employeesResponse, ranksResponse] = await Promise.all([
+        fetch(`${API_URL}/users`, {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        }),
+        fetch(`${API_URL}/users/ranks`, {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        }),
+      ]);
 
-      const data = (await response.json()) as EmployeesResponse;
+      const employeesData =
+        (await employeesResponse.json()) as EmployeesResponse;
 
-      if (!response.ok) {
+      const ranksData = (await ranksResponse.json()) as RanksResponse;
+
+      if (!employeesResponse.ok) {
         setEmployees([]);
+        setRanks([]);
         setCurrentPage(1);
 
-        setErrorMessage(data.message || "Angajații nu au putut fi încărcați.");
+        setErrorMessage(
+          employeesData.message || "Angajații nu au putut fi încărcați.",
+        );
 
         return;
       }
 
-      setEmployees(data.users ?? []);
+      setEmployees(employeesData.users ?? []);
       setCurrentPage(1);
+
+      if (!ranksResponse.ok) {
+        setRanks([]);
+
+        console.error(
+          ranksData.message || "Rank-urile nu au putut fi încărcate.",
+        );
+      } else {
+        setRanks(ranksData.ranks ?? []);
+      }
     } catch (error) {
       console.error("Load employees request error:", error);
 
       setEmployees([]);
+      setRanks([]);
       setCurrentPage(1);
 
       setErrorMessage("Nu s-a putut realiza conexiunea cu serverul.");
@@ -344,58 +381,44 @@ export default function EmployeesPage() {
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => void handleExportExcel()}
-              className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 transition hover:bg-emerald-500/20"
-            >
-              <FileSpreadsheet size={18} />
-              Descarcă Excel
-            </button>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => void handleExportExcel()}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-sm font-medium text-emerald-300 transition hover:bg-emerald-500/20"
+              >
+                <FileSpreadsheet size={18} />
+                Descarcă Excel
+              </button>
 
-            <button
-              type="button"
-              onClick={() => void loadEmployees(true)}
-              disabled={isLoading || isRefreshing}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/10 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <RefreshCw
-                size={17}
-                className={isRefreshing ? "animate-spin" : ""}
-              />
-              Reîncarcă
-            </button>
+              <button
+                type="button"
+                onClick={() => void loadEmployees(true)}
+                disabled={isLoading || isRefreshing}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/10 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <RefreshCw
+                  size={17}
+                  className={isRefreshing ? "animate-spin" : ""}
+                />
+                Reîncarcă
+              </button>
+            </div>
           </div>
 
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <StatisticCard label="Total angajați" value={employees.length} />
 
-            <StatisticCard
-              label="Manageri"
-              value={
-                employees.filter(
-                  (employee) => employee.rank === "Blackfold Manager",
-                ).length
-              }
-            />
-
-            <StatisticCard
-              label="Specialiști"
-              value={
-                employees.filter(
-                  (employee) => employee.rank === "Blackfold Specialist",
-                ).length
-              }
-            />
-
-            <StatisticCard
-              label="Crew"
-              value={
-                employees.filter(
-                  (employee) => employee.rank === "Blackfold Crew",
-                ).length
-              }
-            />
+            {ranks.map((rank) => (
+              <StatisticCard
+                key={rank.id}
+                label={rank.name}
+                value={
+                  employees.filter((employee) => employee.rank === rank.name)
+                    .length
+                }
+              />
+            ))}
           </div>
 
           <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -678,14 +701,16 @@ interface StatisticCardProps {
 function StatisticCard({ label, value }: StatisticCardProps) {
   return (
     <div className="rounded-2xl border border-white/10 bg-black/30 p-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-zinc-400">{label}</p>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="truncate text-sm text-zinc-400" title={label}>
+            {label}
+          </p>
 
           <p className="mt-2 text-3xl font-bold text-white">{value}</p>
         </div>
 
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#B8904D]/10 text-[#B8904D]">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#B8904D]/10 text-[#B8904D]">
           <Users size={21} />
         </div>
       </div>

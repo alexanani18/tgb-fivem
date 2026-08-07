@@ -7,9 +7,9 @@ import {
   type Request,
   type Response,
 } from "express";
-import { type ResultSetHeader, type RowDataPacket } from "mysql2";
 
-import { db } from "../db";
+import * as notificationsDatabase from "../database/notifications";
+
 
 const router = Router();
 
@@ -41,46 +41,6 @@ interface SessionUser {
   role: string;
 }
 
-interface NotificationImage {
-  id: number;
-  image_path: string;
-  position: number;
-}
-
-interface NotificationImageRow extends RowDataPacket {
-  id: number;
-  notification_id: number;
-  image_path: string;
-  position: number;
-  created_at: Date;
-}
-
-interface NotificationRow extends RowDataPacket {
-  id: number;
-  recipient_id: number;
-  created_by: number;
-  title: string;
-  message: string;
-  is_read: number;
-  created_at: Date;
-  updated_at: Date;
-  recipient_username?: string;
-  creator_username?: string;
-}
-
-interface NotificationWithImages extends NotificationRow {
-  images: NotificationImage[];
-}
-
-interface RecipientRow extends RowDataPacket {
-  id: number;
-  username: string;
-  user_role: string;
-}
-
-interface CountRow extends RowDataPacket {
-  unread_count: number;
-}
 
 /*
 |--------------------------------------------------------------------------
@@ -215,52 +175,6 @@ async function selectRandomNotificationImages(): Promise<string[]> {
     .map((fileName) => `/notification-images/${encodeURIComponent(fileName)}`);
 }
 
-async function attachImagesToNotifications(
-  notifications: NotificationRow[],
-): Promise<NotificationWithImages[]> {
-  if (notifications.length === 0) {
-    return [];
-  }
-
-  const notificationIds = notifications.map((notification) => notification.id);
-
-  const placeholders = notificationIds.map(() => "?").join(", ");
-
-  const [imageRows] = await db.execute<NotificationImageRow[]>(
-    `
-      SELECT
-        id,
-        notification_id,
-        image_path,
-        position,
-        created_at
-      FROM notification_images
-      WHERE notification_id IN (${placeholders})
-      ORDER BY notification_id ASC, position ASC
-    `,
-    notificationIds,
-  );
-
-  const imagesByNotificationId = new Map<number, NotificationImage[]>();
-
-  for (const imageRow of imageRows) {
-    const currentImages =
-      imagesByNotificationId.get(imageRow.notification_id) ?? [];
-
-    currentImages.push({
-      id: imageRow.id,
-      image_path: imageRow.image_path,
-      position: imageRow.position,
-    });
-
-    imagesByNotificationId.set(imageRow.notification_id, currentImages);
-  }
-
-  return notifications.map((notification) => ({
-    ...notification,
-    images: imagesByNotificationId.get(notification.id) ?? [],
-  }));
-}
 
 /*
 |--------------------------------------------------------------------------
@@ -277,20 +191,7 @@ router.get(
   requireAdmin,
   async (_req: Request, res: Response) => {
     try {
-      const [recipients] = await db.execute<RecipientRow[]>(
-        `
-          SELECT
-            u.id,
-            u.username,
-            ur.name AS user_role
-          FROM users u
-          INNER JOIN user_roles ur
-            ON ur.id = u.user_role_id
-          WHERE u.is_active = 1
-            AND ur.name <> 'ADMIN'
-          ORDER BY u.username ASC
-        `,
-      );
+      const recipients = await notificationsDatabase.getRecipients();
 
       return res.status(200).json({
         success: true,
@@ -320,19 +221,13 @@ router.get(
     try {
       const sessionUser = getSessionUser(req)!;
 
-      const [rows] = await db.execute<CountRow[]>(
-        `
-          SELECT COUNT(*) AS unread_count
-          FROM notifications
-          WHERE recipient_id = ?
-            AND is_read = 0
-        `,
-        [sessionUser.id],
+      const unreadCount = await notificationsDatabase.getUnreadNotificationsCount(
+        sessionUser.id,
       );
 
       return res.status(200).json({
         success: true,
-        unreadCount: Number(rows[0]?.unread_count ?? 0),
+        unreadCount,
       });
     } catch (error) {
       console.error("❌ Failed to get unread notification count:", error);
@@ -360,66 +255,21 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
     const sessionUser = getSessionUser(req)!;
 
     if (sessionUser.role === "ADMIN") {
-      const [notifications] = await db.execute<NotificationRow[]>(
-        `
-          SELECT
-            n.id,
-            n.recipient_id,
-            n.created_by,
-            n.title,
-            n.message,
-            n.is_read,
-            n.created_at,
-            n.updated_at,
-            recipient.username AS recipient_username,
-            creator.username AS creator_username
-          FROM notifications n
-          INNER JOIN users recipient
-            ON recipient.id = n.recipient_id
-          INNER JOIN users creator
-            ON creator.id = n.created_by
-          WHERE n.created_by = ?
-          ORDER BY n.created_at DESC
-        `,
-        [sessionUser.id],
-      );
-
-      const notificationsWithImages =
-        await attachImagesToNotifications(notifications);
+      const notifications =
+        await notificationsDatabase.getAdminNotifications(sessionUser.id);
 
       return res.status(200).json({
         success: true,
-        notifications: notificationsWithImages,
+        notifications,
       });
     }
 
-    const [notifications] = await db.execute<NotificationRow[]>(
-      `
-        SELECT
-          n.id,
-          n.recipient_id,
-          n.created_by,
-          n.title,
-          n.message,
-          n.is_read,
-          n.created_at,
-          n.updated_at,
-          creator.username AS creator_username
-        FROM notifications n
-        INNER JOIN users creator
-          ON creator.id = n.created_by
-        WHERE n.recipient_id = ?
-        ORDER BY n.created_at DESC
-      `,
-      [sessionUser.id],
-    );
-
-    const notificationsWithImages =
-      await attachImagesToNotifications(notifications);
+    const notifications =
+      await notificationsDatabase.getUserNotifications(sessionUser.id);
 
     return res.status(200).json({
       success: true,
-      notifications: notificationsWithImages,
+      notifications,
     });
   } catch (error) {
     console.error("❌ Failed to get notifications:", error);
@@ -478,24 +328,10 @@ router.post("/", requireAdmin, async (req: Request, res: Response) => {
 
     const sessionUser = getSessionUser(req)!;
 
-    const [recipients] = await db.execute<RecipientRow[]>(
-      `
-        SELECT
-          u.id,
-          u.username,
-          ur.name AS user_role
-        FROM users u
-        INNER JOIN user_roles ur
-          ON ur.id = u.user_role_id
-        WHERE u.id = ?
-          AND u.is_active = 1
-          AND ur.name <> 'ADMIN'
-        LIMIT 1
-      `,
-      [recipientId],
-    );
+    const recipient =
+      await notificationsDatabase.getRecipientById(recipientId);
 
-    if (recipients.length === 0) {
+    if (!recipient) {
       return res.status(404).json({
         success: false,
         message: "Destinatarul nu există sau este inactiv.",
@@ -511,86 +347,21 @@ router.post("/", requireAdmin, async (req: Request, res: Response) => {
     const selectedImages = includeImages
       ? await selectRandomNotificationImages()
       : [];
+    const notification = await notificationsDatabase.createNotification(
+      recipientId,
+      sessionUser.id,
+      title,
+      message,
+      selectedImages,
+    );
 
-    const connection = await db.getConnection();
-
-    try {
-      await connection.beginTransaction();
-
-      const [insertResult] = await connection.execute<ResultSetHeader>(
-        `
-            INSERT INTO notifications (
-              recipient_id,
-              created_by,
-              title,
-              message
-            )
-            VALUES (?, ?, ?, ?)
-          `,
-        [recipientId, sessionUser.id, title, message],
-      );
-
-      for (
-        let imageIndex = 0;
-        imageIndex < selectedImages.length;
-        imageIndex += 1
-      ) {
-        await connection.execute<ResultSetHeader>(
-          `
-            INSERT INTO notification_images (
-              notification_id,
-              image_path,
-              position
-            )
-            VALUES (?, ?, ?)
-          `,
-          [insertResult.insertId, selectedImages[imageIndex], imageIndex + 1],
-        );
-      }
-
-      await connection.commit();
-
-      const [createdNotifications] = await db.execute<NotificationRow[]>(
-        `
-            SELECT
-              n.id,
-              n.recipient_id,
-              n.created_by,
-              n.title,
-              n.message,
-              n.is_read,
-              n.created_at,
-              n.updated_at,
-              recipient.username AS recipient_username,
-              creator.username AS creator_username
-            FROM notifications n
-            INNER JOIN users recipient
-              ON recipient.id = n.recipient_id
-            INNER JOIN users creator
-              ON creator.id = n.created_by
-            WHERE n.id = ?
-            LIMIT 1
-          `,
-        [insertResult.insertId],
-      );
-
-      const notificationsWithImages =
-        await attachImagesToNotifications(createdNotifications);
-
-      return res.status(201).json({
-        success: true,
-        message: includeImages
-          ? "Notificarea și cele 4 imagini au fost trimise."
-          : "Notificarea a fost trimisă.",
-        notification: notificationsWithImages[0],
-      });
-    } catch (error) {
-      await connection.rollback();
-
-      throw error;
-    } finally {
-      connection.release();
-    }
+    return res.status(201).json({
+      success: true,
+      message: includeImages
+        ? "Notificarea și cele 4 imagini au fost trimise."
+        : "Notificarea a fost trimisă.",
+      notification,
+    });
   } catch (error) {
     console.error("❌ Failed to create notification:", error);
 
@@ -632,20 +403,13 @@ router.patch("/read-all", requireAuth, async (req: Request, res: Response) => {
   try {
     const sessionUser = getSessionUser(req)!;
 
-    const [result] = await db.execute<ResultSetHeader>(
-      `
-          UPDATE notifications
-          SET is_read = 1
-          WHERE recipient_id = ?
-            AND is_read = 0
-        `,
-      [sessionUser.id],
-    );
+    const updatedCount =
+      await notificationsDatabase.markAllNotificationsAsRead(sessionUser.id);
 
     return res.status(200).json({
       success: true,
       message: "Toate notificările au fost marcate drept citite.",
-      updatedCount: result.affectedRows,
+      updatedCount,
     });
   } catch (error) {
     console.error("❌ Failed to mark all notifications as read:", error);
@@ -676,17 +440,12 @@ router.patch("/:id/read", requireAuth, async (req: Request, res: Response) => {
 
     const sessionUser = getSessionUser(req)!;
 
-    const [result] = await db.execute<ResultSetHeader>(
-      `
-          UPDATE notifications
-          SET is_read = 1
-          WHERE id = ?
-            AND recipient_id = ?
-        `,
-      [notificationId, sessionUser.id],
+    const updated = await notificationsDatabase.markNotificationAsRead(
+      notificationId,
+      sessionUser.id,
     );
 
-    if (result.affectedRows === 0) {
+    if (!updated) {
       return res.status(404).json({
         success: false,
         message: "Notificarea nu există sau nu aparține contului tău.",
@@ -730,33 +489,19 @@ router.patch("/:id", requireAdmin, async (req: Request, res: Response) => {
 
     const sessionUser = getSessionUser(req)!;
 
-    const [existingNotifications] = await db.execute<NotificationRow[]>(
-      `
-          SELECT
-            id,
-            recipient_id,
-            created_by,
-            title,
-            message,
-            is_read,
-            created_at,
-            updated_at
-          FROM notifications
-          WHERE id = ?
-            AND created_by = ?
-          LIMIT 1
-        `,
-      [notificationId, sessionUser.id],
-    );
+    const existingNotification =
+      await notificationsDatabase.getNotificationById(notificationId);
 
-    if (existingNotifications.length === 0) {
+    if (
+      !existingNotification ||
+      existingNotification.created_by !== sessionUser.id
+    ) {
       return res.status(404).json({
         success: false,
-        message: "Notificarea nu există sau nu ai permisiunea să o modifici.",
+        message:
+          "Notificarea nu există sau nu ai permisiunea să o modifici.",
       });
     }
-
-    const existingNotification = existingNotifications[0];
 
     const title =
       req.body.title === undefined
@@ -783,49 +528,25 @@ router.patch("/:id", requireAdmin, async (req: Request, res: Response) => {
       });
     }
 
-    await db.execute<ResultSetHeader>(
-      `
-        UPDATE notifications
-        SET
-          title = ?,
-          message = ?
-        WHERE id = ?
-          AND created_by = ?
-      `,
-      [title, message, notificationId, sessionUser.id],
+    const notification = await notificationsDatabase.updateNotification(
+      notificationId,
+      sessionUser.id,
+      title,
+      message,
     );
 
-    const [updatedNotifications] = await db.execute<NotificationRow[]>(
-      `
-          SELECT
-            n.id,
-            n.recipient_id,
-            n.created_by,
-            n.title,
-            n.message,
-            n.is_read,
-            n.created_at,
-            n.updated_at,
-            recipient.username AS recipient_username,
-            creator.username AS creator_username
-          FROM notifications n
-          INNER JOIN users recipient
-            ON recipient.id = n.recipient_id
-          INNER JOIN users creator
-            ON creator.id = n.created_by
-          WHERE n.id = ?
-          LIMIT 1
-        `,
-      [notificationId],
-    );
-
-    const notificationsWithImages =
-      await attachImagesToNotifications(updatedNotifications);
+    if (!notification) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Notificarea nu există sau nu ai permisiunea să o modifici.",
+      });
+    }
 
     return res.status(200).json({
       success: true,
       message: "Notificarea a fost actualizată.",
-      notification: notificationsWithImages[0],
+      notification,
     });
   } catch (error) {
     console.error("❌ Failed to update notification:", error);
@@ -860,16 +581,12 @@ router.delete("/:id", requireAdmin, async (req: Request, res: Response) => {
 
     const sessionUser = getSessionUser(req)!;
 
-    const [result] = await db.execute<ResultSetHeader>(
-      `
-          DELETE FROM notifications
-          WHERE id = ?
-            AND created_by = ?
-        `,
-      [notificationId, sessionUser.id],
+    const deleted = await notificationsDatabase.deleteNotification(
+      notificationId,
+      sessionUser.id,
     );
 
-    if (result.affectedRows === 0) {
+    if (!deleted) {
       return res.status(404).json({
         success: false,
         message: "Notificarea nu există sau nu ai permisiunea să o ștergi.",

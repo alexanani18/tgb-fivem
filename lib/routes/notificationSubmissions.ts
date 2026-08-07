@@ -10,9 +10,11 @@ import {
 
 import multer from "multer";
 
-import { type ResultSetHeader, type RowDataPacket } from "mysql2";
+import { type ResultSetHeader,} from "mysql2";
 
 import { db } from "../db";
+
+import * as notificationSubmissionsDatabase from "../database/notificationImageSubmissions";
 
 const router = Router();
 
@@ -28,33 +30,6 @@ interface SessionUser {
   role: string;
 }
 
-interface NotificationImageRow extends RowDataPacket {
-  id: number;
-  notification_id: number;
-  image_path: string;
-  position: number;
-  display_name: string | null;
-}
-
-interface SubmissionRow extends RowDataPacket {
-  id: number;
-  notification_image_id: number;
-  uploaded_by: number;
-
-  file_path: string;
-  original_file_name: string;
-  mime_type: string;
-  file_size: number;
-
-  status: string;
-
-  reviewed_by: number | null;
-  reviewed_at: Date | null;
-  rejection_reason: string | null;
-
-  created_at: Date;
-  updated_at: Date;
-}
 
 /*
 |--------------------------------------------------------------------------
@@ -181,50 +156,6 @@ function parsePositiveInteger(value: unknown): number | null {
   return parsedValue;
 }
 
-async function notificationImageExists(notificationImageId: number) {
-  const [rows] = await db.execute<NotificationImageRow[]>(
-    `
-      SELECT
-        id,
-        notification_id,
-        image_path,
-        position,
-        display_name
-      FROM notification_images
-      WHERE id = ?
-      LIMIT 1
-      `,
-    [notificationImageId],
-  );
-
-  return rows[0] ?? null;
-}
-
-async function submissionBelongsToUser(
-  notificationImageId: number,
-  userId: number,
-) {
-  const [rows] = await db.execute<RowDataPacket[]>(
-    `
-      SELECT
-        ni.id
-      FROM notification_images ni
-
-      INNER JOIN notifications n
-        ON n.id = ni.notification_id
-
-      WHERE
-        ni.id = ?
-        AND n.recipient_id = ?
-
-      LIMIT 1
-      `,
-    [notificationImageId, userId],
-  );
-
-  return rows.length > 0;
-}
-
 /*
 |--------------------------------------------------------------------------
 | Middleware
@@ -274,7 +205,7 @@ router.post(
       }
 
       const notificationImage =
-        await notificationImageExists(notificationImageId);
+        await notificationSubmissionsDatabase.notificationImageExists(notificationImageId);
 
       if (!notificationImage) {
         fs.unlinkSync(req.file.path);
@@ -285,7 +216,7 @@ router.post(
         });
       }
 
-      const hasAccess = await submissionBelongsToUser(
+      const hasAccess = await notificationSubmissionsDatabase.submissionBelongsToUser(
         notificationImageId,
         sessionUser.id,
       );
@@ -299,36 +230,18 @@ router.post(
         });
       }
 
-      const [activeSubmissions] = await db.execute<
-        Array<
-          RowDataPacket & {
-            id: number;
-            status: string;
-          }
-        >
-      >(
-        `
-    SELECT
-      id,
-      status
-    FROM notification_image_submissions
-    WHERE notification_image_id = ?
-      AND uploaded_by = ?
-      AND status IN ('PENDING', 'APPROVED')
-    ORDER BY created_at DESC
-    LIMIT 1
-  `,
-        [notificationImageId, sessionUser.id],
-      );
+      const activeSubmission =
+        await notificationSubmissionsDatabase.getActiveSubmission(
+          notificationImageId,
+          sessionUser.id,
+        );
 
-      if (activeSubmissions.length > 0) {
+      if (activeSubmission) {
         try {
           fs.unlinkSync(req.file.path);
         } catch {
           // Fișierul nu mai există sau nu a putut fi șters.
         }
-
-        const activeSubmission = activeSubmissions[0];
 
         if (activeSubmission.status === "APPROVED") {
           return res.status(409).json({
@@ -346,37 +259,22 @@ router.post(
 
       const relativePath = "/notification-submissions/" + req.file.filename;
 
-      const [result] = await db.execute<ResultSetHeader>(
-        `
-          INSERT INTO notification_image_submissions
-          (
-            notification_image_id,
-            uploaded_by,
-            file_path,
-            original_file_name,
-            mime_type,
-            file_size,
-            status
-          )
-          VALUES
-          (?, ?, ?, ?, ?, ?, 'PENDING')
-          `,
-        [
+      const submissionId =
+        await notificationSubmissionsDatabase.createSubmission(
           notificationImageId,
           sessionUser.id,
           relativePath,
           req.file.originalname,
           req.file.mimetype,
           req.file.size,
-        ],
-      );
+        );
 
       return res.status(201).json({
         success: true,
         message: "Imaginea a fost încărcată și trimisă în review.",
 
         submission: {
-          id: result.insertId,
+          id: submissionId,
           notificationImageId,
           status: "PENDING",
           filePath: relativePath,
@@ -416,83 +314,8 @@ router.get(
   requireAdmin,
   async (_req: Request, res: Response) => {
     try {
-      const [submissions] = await db.execute<
-        Array<
-          RowDataPacket & {
-            id: number;
-            notification_image_id: number;
-            uploaded_by: number;
-            file_path: string;
-            original_file_name: string;
-            mime_type: string;
-            file_size: number;
-            status: string;
-            reviewed_by: number | null;
-            reviewed_at: Date | null;
-            rejection_reason: string | null;
-            created_at: Date;
-            updated_at: Date;
-
-            uploader_username: string;
-            requested_image_path: string;
-            requested_image_position: number;
-            requested_image_display_name: string | null;
-
-            notification_id: number;
-            notification_title: string;
-            notification_message: string;
-          }
-        >
-      >(
-        `
-          SELECT
-            submission.id,
-            submission.notification_image_id,
-            submission.uploaded_by,
-            submission.file_path,
-            submission.original_file_name,
-            submission.mime_type,
-            submission.file_size,
-            submission.status,
-            submission.reviewed_by,
-            submission.reviewed_at,
-            submission.rejection_reason,
-            submission.created_at,
-            submission.updated_at,
-
-            uploader.username AS uploader_username,
-
-            notification_image.image_path
-              AS requested_image_path,
-
-            notification_image.position
-              AS requested_image_position,
-
-            notification_image.display_name
-              AS requested_image_display_name,
-
-            notification.id AS notification_id,
-            notification.title AS notification_title,
-            notification.message AS notification_message
-
-          FROM notification_image_submissions submission
-
-          INNER JOIN notification_images notification_image
-            ON notification_image.id =
-              submission.notification_image_id
-
-          INNER JOIN notifications notification
-            ON notification.id =
-              notification_image.notification_id
-
-          INNER JOIN users uploader
-            ON uploader.id = submission.uploaded_by
-
-          WHERE submission.status = 'PENDING'
-
-          ORDER BY submission.created_at ASC
-        `,
-      );
+      const submissions =
+        await notificationSubmissionsDatabase.getPendingSubmissions();
 
       return res.status(200).json({
         success: true,
@@ -529,10 +352,11 @@ router.get("/:notificationImageId", requireAuth, async (req, res) => {
       });
     }
 
-    const hasAccess = await submissionBelongsToUser(
-      notificationImageId,
-      sessionUser.id,
-    );
+    const hasAccess =
+      await notificationSubmissionsDatabase.submissionBelongsToUser(
+        notificationImageId,
+        sessionUser.id,
+      );
 
     if (!hasAccess && sessionUser.role !== "ADMIN") {
       return res.status(403).json({
@@ -540,19 +364,14 @@ router.get("/:notificationImageId", requireAuth, async (req, res) => {
       });
     }
 
-    const [rows] = await db.execute<SubmissionRow[]>(
-      `
-          SELECT *
-          FROM notification_image_submissions
-          WHERE notification_image_id = ?
-          ORDER BY created_at DESC
-          `,
-      [notificationImageId],
-    );
+    const submissions =
+      await notificationSubmissionsDatabase.getSubmissionsByNotificationImageId(
+        notificationImageId,
+      );
 
     return res.json({
       success: true,
-      submissions: rows,
+      submissions,
     });
   } catch (error) {
     console.error(error);
@@ -588,37 +407,15 @@ router.patch(
 
       const sessionUser = getSessionUser(req)!;
 
-      const [submissions] = await db.execute<SubmissionRow[]>(
-        `
-          SELECT
-            id,
-            notification_image_id,
-            uploaded_by,
-            file_path,
-            original_file_name,
-            mime_type,
-            file_size,
-            status,
-            reviewed_by,
-            reviewed_at,
-            rejection_reason,
-            created_at,
-            updated_at
-          FROM notification_image_submissions
-          WHERE id = ?
-          LIMIT 1
-        `,
-        [submissionId],
-      );
+      const submission =
+        await notificationSubmissionsDatabase.getSubmissionById(submissionId);
 
-      if (submissions.length === 0) {
+      if (!submission) {
         return res.status(404).json({
           success: false,
           message: "Dovada nu există.",
         });
       }
-
-      const submission = submissions[0];
 
       if (submission.status === "APPROVED") {
         return res.status(409).json({
@@ -692,33 +489,13 @@ router.patch(
         connection.release();
       }
 
-      const [updatedSubmissions] = await db.execute<SubmissionRow[]>(
-        `
-            SELECT
-              id,
-              notification_image_id,
-              uploaded_by,
-              file_path,
-              original_file_name,
-              mime_type,
-              file_size,
-              status,
-              reviewed_by,
-              reviewed_at,
-              rejection_reason,
-              created_at,
-              updated_at
-            FROM notification_image_submissions
-            WHERE id = ?
-            LIMIT 1
-          `,
-        [submissionId],
-      );
+      const updatedSubmission =
+        await notificationSubmissionsDatabase.getSubmissionById(submissionId);
 
       return res.status(200).json({
         success: true,
         message: "Dovada a fost aprobată.",
-        submission: updatedSubmissions[0],
+        submission: updatedSubmission,
       });
     } catch (error) {
       console.error("❌ Failed to approve submission:", error);
@@ -782,37 +559,15 @@ router.patch(
 
       const sessionUser = getSessionUser(req)!;
 
-      const [submissions] = await db.execute<SubmissionRow[]>(
-        `
-          SELECT
-            id,
-            notification_image_id,
-            uploaded_by,
-            file_path,
-            original_file_name,
-            mime_type,
-            file_size,
-            status,
-            reviewed_by,
-            reviewed_at,
-            rejection_reason,
-            created_at,
-            updated_at
-          FROM notification_image_submissions
-          WHERE id = ?
-          LIMIT 1
-        `,
-        [submissionId],
-      );
+      const submission =
+        await notificationSubmissionsDatabase.getSubmissionById(submissionId);
 
-      if (submissions.length === 0) {
+      if (!submission) {
         return res.status(404).json({
           success: false,
           message: "Dovada nu există.",
         });
       }
-
-      const submission = submissions[0];
 
       if (submission.status === "REJECTED") {
         return res.status(409).json({
@@ -828,54 +583,27 @@ router.patch(
         });
       }
 
-      const [result] = await db.execute<ResultSetHeader>(
-        `
-          UPDATE notification_image_submissions
-          SET
-            status = 'REJECTED',
-            reviewed_by = ?,
-            reviewed_at = CURRENT_TIMESTAMP,
-            rejection_reason = ?
-          WHERE id = ?
-            AND status = 'PENDING'
-        `,
-        [sessionUser.id, rejectionReason || null, submissionId],
-      );
+      const affectedRows =
+        await notificationSubmissionsDatabase.rejectSubmission(
+          submissionId,
+          sessionUser.id,
+          rejectionReason || null,
+        );
 
-      if (result.affectedRows === 0) {
+      if (affectedRows === 0) {
         return res.status(409).json({
           success: false,
           message: "Dovada a fost deja verificată de alt administrator.",
         });
       }
 
-      const [updatedSubmissions] = await db.execute<SubmissionRow[]>(
-        `
-            SELECT
-              id,
-              notification_image_id,
-              uploaded_by,
-              file_path,
-              original_file_name,
-              mime_type,
-              file_size,
-              status,
-              reviewed_by,
-              reviewed_at,
-              rejection_reason,
-              created_at,
-              updated_at
-            FROM notification_image_submissions
-            WHERE id = ?
-            LIMIT 1
-          `,
-        [submissionId],
-      );
+      const updatedSubmission =
+        await notificationSubmissionsDatabase.getSubmissionById(submissionId);
 
       return res.status(200).json({
         success: true,
         message: "Dovada a fost respinsă.",
-        submission: updatedSubmissions[0],
+        submission: updatedSubmission,
       });
     } catch (error) {
       console.error("❌ Failed to reject submission:", error);

@@ -7,6 +7,9 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { db } from "../db";
 import { requireAuth } from "../services/requireAuth";
 import { requireAdmin } from "../services/requireAdmin";
+import { generateEmployeeContract } from "../services/contractGenerationService";
+
+import * as contractsDatabase from "../database/contracts";
 
 const router = Router();
 
@@ -87,59 +90,43 @@ type ContractStatus =
   | "REJECTED"
   | "BLOCKED";
 
-interface ContractRow extends RowDataPacket {
-  id: number;
-  user_id: number;
-  first_name: string;
-  last_name: string;
-  age: number;
-  game_id: string;
-  ci_series: string;
-  phone_number: string;
-  city_hours: number;
-  identity_image_path: string;
-  accepted_rules: number;
-  employee_signature_name: string | null;
-  status: ContractStatus;
-  contract_creation_blocked: number;
-  signed_at: Date | null;
-  approved_by_user_id: number | null;
-  approved_by_name: string | null;
-  admin_signature_path: string | null;
-  approved_at: Date | null;
-  created_at: Date;
-  updated_at: Date;
-  rejected_by_user_id: number | null;
-  rejected_by_name: string | null;
-  rejected_at: string | null;
+interface GeneratedContractRow extends RowDataPacket {
+  document_number: string;
+  current_version: number;
+  png_path: string;
+  pdf_path: string;
+  generated_at: Date;
 }
 
-interface AdminContractListRow extends RowDataPacket {
-  id: number;
-  user_id: number;
-  username: string;
-  first_name: string;
-  last_name: string;
-  age: number;
-  game_id: string;
-  ci_series: string;
-  phone_number: string;
-  city_hours: number;
-  identity_image_path: string;
-  accepted_rules: number;
-  employee_signature_name: string | null;
-  status: ContractStatus;
-  contract_creation_blocked: number;
-  signed_at: Date | null;
-  approved_by_user_id: number | null;
-  approved_by_name: string | null;
-  admin_signature_path: string | null;
-  approved_at: Date | null;
-  created_at: Date;
-  updated_at: Date;
-  rejected_by_user_id: number | null;
-  rejected_by_name: string | null;
-  rejected_at: string | null;
+interface UserDisplayNameRow extends RowDataPacket {
+  display_name: string;
+}
+
+async function getUserDisplayName(
+  connection: Awaited<ReturnType<typeof db.getConnection>>,
+  userId: number,
+  fallbackUsername: string,
+): Promise<string> {
+  const [rows] = await connection.execute<UserDisplayNameRow[]>(
+    `
+      SELECT
+        COALESCE(
+          NULLIF(
+            TRIM(CONCAT_WS(' ', ec.last_name, ec.first_name)),
+            ''
+          ),
+          u.username
+        ) AS display_name
+      FROM users u
+      LEFT JOIN employee_contracts ec
+        ON ec.user_id = u.id
+      WHERE u.id = ?
+      LIMIT 1
+    `,
+    [userId],
+  );
+
+  return rows[0]?.display_name?.trim() || fallbackUsername;
 }
 
 router.get("/me", requireAuth, async (req, res) => {
@@ -153,43 +140,7 @@ router.get("/me", requireAuth, async (req, res) => {
       });
     }
 
-    const [contracts] = await db.execute<ContractRow[]>(
-      `
-        SELECT
-          ec.id,
-          ec.user_id,
-          ec.first_name,
-          ec.last_name,
-          ec.age,
-          ec.game_id,
-          ec.ci_series,
-          ec.phone_number,
-          ec.city_hours,
-          ec.identity_image_path,
-          ec.accepted_rules,
-          ec.employee_signature_name,
-          ec.status,
-          ec.contract_creation_blocked,
-          ec.signed_at,
-          ec.approved_by_user_id,
-          ec.approved_by_name,
-          ec.admin_signature_path,
-          ec.approved_at,
-          ec.rejected_by_user_id,
-          rejected_user.username AS rejected_by_name,
-          ec.rejected_at,
-          ec.created_at,
-          ec.updated_at
-        FROM employee_contracts ec
-        LEFT JOIN users rejected_user
-          ON rejected_user.id = ec.rejected_by_user_id
-        WHERE ec.user_id = ?
-        LIMIT 1
-      `,
-      [sessionUser.id],
-    );
-
-    const contract = contracts[0];
+    const contract = await contractsDatabase.getOwnContract(sessionUser.id);
 
     if (!contract) {
       return res.status(200).json({
@@ -221,6 +172,9 @@ router.get("/me", requireAuth, async (req, res) => {
         approvedByName: contract.approved_by_name,
         adminSignaturePath: contract.admin_signature_path,
         approvedAt: contract.approved_at,
+        workSchedule: contract.work_schedule,
+        contractType: contract.contract_type,
+        contractEndDate: contract.contract_end_date,
         rejectedByUserId: contract.rejected_by_user_id,
         rejectedByName: contract.rejected_by_name,
         rejectedAt: contract.rejected_at,
@@ -237,6 +191,67 @@ router.get("/me", requireAuth, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Eroare internă la încărcarea contractului.",
+    });
+  }
+});
+
+router.get("/me/document", async (req, res) => {
+  try {
+    const sessionUser = req.session.user;
+
+    if (!sessionUser) {
+      return res.status(401).json({
+        success: false,
+        message: "Nu ești autentificat.",
+      });
+    }
+
+    const [rows] = await db.query<GeneratedContractRow[]>(
+      `
+        SELECT
+          ed.document_number,
+          ed.current_version,
+          edv.png_path,
+          edv.pdf_path,
+          edv.generated_at
+        FROM employee_documents ed
+        INNER JOIN employee_document_versions edv
+          ON edv.document_id = ed.id
+          AND edv.version_number = ed.current_version
+        INNER JOIN employee_contracts ec
+          ON ec.id = ed.contract_id
+        WHERE ec.user_id = ?
+          AND ec.status = 'APPROVED'
+        LIMIT 1
+      `,
+      [sessionUser.id],
+    );
+
+    const document = rows[0];
+
+    if (!document) {
+      return res.status(200).json({
+        success: true,
+        document: null,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      document: {
+        documentNumber: document.document_number,
+        currentVersion: document.current_version,
+        pngPath: document.png_path,
+        pdfPath: document.pdf_path,
+        generatedAt: document.generated_at,
+      },
+    });
+  } catch (error) {
+    console.error("Get employee document error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Documentul contractului nu a putut fi încărcat.",
     });
   }
 });
@@ -490,6 +505,10 @@ router.post(
               approved_by_name = NULL,
               admin_signature_path = NULL,
               approved_at = NULL,
+              work_schedule = NULL,
+              contract_type = NULL,
+              contract_end_date = NULL,
+              rejected_by_user_id = NULL,
               rejected_at = NULL
             WHERE id = ?
           `,
@@ -603,47 +622,7 @@ router.post(
 
 router.get("/admin", requireAdmin, async (_req, res) => {
   try {
-    const [contracts] = await db.execute<AdminContractListRow[]>(
-      `
-        SELECT
-          ec.id,
-          ec.user_id,
-          u.username,
-          ec.first_name,
-          ec.last_name,
-          ec.age,
-          ec.game_id,
-          ec.ci_series,
-          ec.phone_number,
-          ec.city_hours,
-          ec.identity_image_path,
-          ec.accepted_rules,
-          ec.employee_signature_name,
-          ec.status,
-          ec.contract_creation_blocked,
-          ec.signed_at,
-          ec.approved_by_user_id,
-          ec.approved_by_name,
-          ec.admin_signature_path,
-          ec.approved_at,
-          ec.rejected_at,
-          ec.created_at,
-          ec.updated_at
-        FROM employee_contracts ec
-        INNER JOIN users u
-          ON u.id = ec.user_id
-        ORDER BY
-          CASE ec.status
-            WHEN 'PENDING_REVIEW' THEN 0
-            WHEN 'REJECTED' THEN 1
-            WHEN 'APPROVED' THEN 2
-            WHEN 'BLOCKED' THEN 3
-            ELSE 4
-          END,
-          ec.signed_at DESC,
-          ec.created_at DESC
-      `,
-    );
+    const contracts = await contractsDatabase.getAdminContracts();
 
     return res.status(200).json({
       success: true,
@@ -668,6 +647,11 @@ router.get("/admin", requireAdmin, async (_req, res) => {
         approvedByName: contract.approved_by_name,
         adminSignaturePath: contract.admin_signature_path,
         approvedAt: contract.approved_at,
+        workSchedule: contract.work_schedule,
+        contractType: contract.contract_type,
+        contractEndDate: contract.contract_end_date,
+        rejectedByUserId: contract.rejected_by_user_id,
+        rejectedByName: contract.rejected_by_name,
         rejectedAt: contract.rejected_at,
         createdAt: contract.created_at,
         updatedAt: contract.updated_at,
@@ -683,23 +667,154 @@ router.get("/admin", requireAdmin, async (_req, res) => {
   }
 });
 
-router.get("/admin/pending-count", requireAdmin, async (_req, res) => {
+router.post("/admin/:contractId/generate", requireAdmin, async (req, res) => {
   try {
-    interface PendingContractsCountRow extends RowDataPacket {
-      pending_count: number;
+    const contractId = Number(req.params.contractId);
+    const sessionUser = req.session.user;
+
+    if (!Number.isInteger(contractId) || contractId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "ID-ul contractului nu este valid.",
+      });
     }
 
-    const [rows] = await db.execute<PendingContractsCountRow[]>(
-      `
-        SELECT COUNT(*) AS pending_count
-        FROM employee_contracts
-        WHERE status = 'PENDING_REVIEW'
-      `,
-    );
+    if (!sessionUser) {
+      return res.status(401).json({
+        success: false,
+        message: "Nu ești autentificat.",
+      });
+    }
+
+    const requestBody = req.body ?? {};
+
+    const hasSettingsUpdate =
+      requestBody.workSchedule !== undefined ||
+      requestBody.contractType !== undefined ||
+      requestBody.contractEndDate !== undefined;
+
+    if (hasSettingsUpdate) {
+      const workSchedule =
+        typeof requestBody.workSchedule === "string"
+          ? requestBody.workSchedule.trim()
+          : "";
+
+      const contractType =
+        requestBody.contractType === "FIXED"
+          ? "FIXED"
+          : requestBody.contractType === "UNLIMITED"
+            ? "UNLIMITED"
+            : null;
+
+      const contractEndDate =
+        typeof requestBody.contractEndDate === "string" &&
+        requestBody.contractEndDate.trim()
+          ? requestBody.contractEndDate.trim()
+          : null;
+
+      if (!workSchedule) {
+        return res.status(400).json({
+          success: false,
+          message: "Programul de lucru este obligatoriu.",
+        });
+      }
+
+      if (workSchedule.length > 50) {
+        return res.status(400).json({
+          success: false,
+          message: "Programul de lucru poate avea maximum 50 de caractere.",
+        });
+      }
+
+      if (!contractType) {
+        return res.status(400).json({
+          success: false,
+          message: "Tipul contractului nu este valid.",
+        });
+      }
+
+      if (contractType === "FIXED") {
+        if (
+          !contractEndDate ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(contractEndDate) ||
+          Number.isNaN(new Date(`${contractEndDate}T00:00:00`).getTime())
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Data expirării este obligatorie pentru contractul determinat.",
+          });
+        }
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const parsedEndDate = new Date(`${contractEndDate}T00:00:00`);
+
+        if (parsedEndDate < today) {
+          return res.status(400).json({
+            success: false,
+            message: "Data expirării nu poate fi în trecut.",
+          });
+        }
+      }
+
+      const [updateResult] = await db.execute<ResultSetHeader>(
+        `
+          UPDATE employee_contracts
+          SET
+            work_schedule = ?,
+            contract_type = ?,
+            contract_end_date = ?
+          WHERE id = ?
+            AND status = 'APPROVED'
+        `,
+        [
+          workSchedule,
+          contractType,
+          contractType === "FIXED" ? contractEndDate : null,
+          contractId,
+        ],
+      );
+
+      if (updateResult.affectedRows === 0) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "Contractul nu există sau nu este aprobat și nu poate fi regenerat.",
+        });
+      }
+    }
+
+    const result = await generateEmployeeContract(contractId, sessionUser.id);
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Generate contract error:", error);
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Contractul nu a putut fi generat.";
+
+    return res.status(500).json({
+      success: false,
+      message,
+    });
+  }
+});
+
+router.get("/admin/pending-count", requireAdmin, async (_req, res) => {
+  try {
+    const pendingCount = await contractsDatabase.getPendingContractsCount();
 
     return res.status(200).json({
       success: true,
-      pendingCount: Number(rows[0]?.pending_count ?? 0),
+      pendingCount,
     });
   } catch (error) {
     console.error("Get pending contracts count error:", error);
@@ -723,46 +838,7 @@ router.get("/admin/:contractId", requireAdmin, async (req, res) => {
       });
     }
 
-    const [contracts] = await db.execute<AdminContractListRow[]>(
-      `
-        SELECT
-          ec.id,
-          ec.user_id,
-          u.username,
-          ec.first_name,
-          ec.last_name,
-          ec.age,
-          ec.game_id,
-          ec.ci_series,
-          ec.phone_number,
-          ec.city_hours,
-          ec.identity_image_path,
-          ec.accepted_rules,
-          ec.employee_signature_name,
-          ec.status,
-          ec.contract_creation_blocked,
-          ec.signed_at,
-          ec.approved_by_user_id,
-          ec.approved_by_name,
-          ec.admin_signature_path,
-          ec.approved_at,
-          ec.rejected_by_user_id,
-          rejected_user.username AS rejected_by_name,
-          ec.rejected_at,
-          ec.created_at,
-          ec.updated_at
-        FROM employee_contracts ec
-        INNER JOIN users u
-          ON u.id = ec.user_id
-        LEFT JOIN users rejected_user
-          ON rejected_user.id = ec.rejected_by_user_id
-        WHERE ec.id = ?
-        LIMIT 1
-      `,
-      [contractId],
-    );
-
-    const contract = contracts[0];
+    const contract = await contractsDatabase.getAdminContractById(contractId);
 
     if (!contract) {
       return res.status(404).json({
@@ -794,6 +870,9 @@ router.get("/admin/:contractId", requireAdmin, async (req, res) => {
         approvedByName: contract.approved_by_name,
         adminSignaturePath: contract.admin_signature_path,
         approvedAt: contract.approved_at,
+        workSchedule: contract.work_schedule,
+        contractType: contract.contract_type,
+        contractEndDate: contract.contract_end_date,
         rejectedByUserId: contract.rejected_by_user_id,
         rejectedByName: contract.rejected_by_name,
         rejectedAt: contract.rejected_at,
@@ -818,6 +897,26 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
     const contractId = Number(req.params.contractId);
     const sessionUser = req.session.user;
 
+    const rankId = Number(req.body.rankId);
+
+    const workSchedule =
+      typeof req.body.workSchedule === "string"
+        ? req.body.workSchedule.trim()
+        : "";
+
+    const contractType =
+      req.body.contractType === "FIXED"
+        ? "FIXED"
+        : req.body.contractType === "UNLIMITED"
+          ? "UNLIMITED"
+          : null;
+
+    const contractEndDate =
+      typeof req.body.contractEndDate === "string" &&
+      req.body.contractEndDate.trim()
+        ? req.body.contractEndDate.trim()
+        : null;
+
     if (!Number.isInteger(contractId) || contractId <= 0) {
       return res.status(400).json({
         success: false,
@@ -832,12 +931,89 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
       });
     }
 
+    if (!Number.isInteger(rankId) || rankId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Selectează un rank valid pentru angajat.",
+      });
+    }
+
+    if (!workSchedule) {
+      return res.status(400).json({
+        success: false,
+        message: "Programul de lucru este obligatoriu.",
+      });
+    }
+
+    if (workSchedule.length > 50) {
+      return res.status(400).json({
+        success: false,
+        message: "Programul de lucru poate avea maximum 50 de caractere.",
+      });
+    }
+
+    if (!contractType) {
+      return res.status(400).json({
+        success: false,
+        message: "Tipul contractului nu este valid.",
+      });
+    }
+
+    if (contractType === "FIXED") {
+      if (
+        !contractEndDate ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(contractEndDate) ||
+        Number.isNaN(new Date(`${contractEndDate}T00:00:00`).getTime())
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Data expirării este obligatorie pentru contractul determinat.",
+        });
+      }
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const parsedEndDate = new Date(`${contractEndDate}T00:00:00`);
+
+      if (parsedEndDate < today) {
+        return res.status(400).json({
+          success: false,
+          message: "Data expirării nu poate fi în trecut.",
+        });
+      }
+    }
+
     await connection.beginTransaction();
 
     interface ContractApprovalRow extends RowDataPacket {
       id: number;
       user_id: number;
       status: ContractStatus;
+    }
+
+    interface RankExistsRow extends RowDataPacket {
+      id: number;
+    }
+
+    const [rankRows] = await connection.execute<RankExistsRow[]>(
+      `
+        SELECT id
+        FROM user_ranks
+        WHERE id = ?
+        LIMIT 1
+      `,
+      [rankId],
+    );
+
+    if (!rankRows[0]) {
+      await connection.rollback();
+
+      return res.status(404).json({
+        success: false,
+        message: "Rank-ul selectat nu există.",
+      });
     }
 
     const [contracts] = await connection.execute<ContractApprovalRow[]>(
@@ -876,22 +1052,24 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
 
     const [userResult] = await connection.execute<ResultSetHeader>(
       `
-    UPDATE users
-    SET user_role_id = (
-      SELECT id
-      FROM user_roles
-      WHERE name = 'ANGAJAT'
-      LIMIT 1
-    )
-    WHERE id = ?
-      AND user_role_id = (
-        SELECT id
-        FROM user_roles
-        WHERE name = 'GUEST'
-        LIMIT 1
-      )
-  `,
-      [contract.user_id],
+        UPDATE users
+        SET
+          user_role_id = (
+            SELECT id
+            FROM user_roles
+            WHERE name = 'ANGAJAT'
+            LIMIT 1
+          ),
+          user_rank_id = ?
+        WHERE id = ?
+          AND user_role_id = (
+            SELECT id
+            FROM user_roles
+            WHERE name = 'GUEST'
+            LIMIT 1
+          )
+      `,
+      [rankId, contract.user_id],
     );
 
     if (userResult.affectedRows === 0) {
@@ -904,6 +1082,12 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
       });
     }
 
+    const approverDisplayName = await getUserDisplayName(
+      connection,
+      sessionUser.id,
+      sessionUser.username,
+    );
+
     await connection.execute<ResultSetHeader>(
       `
         UPDATE employee_contracts
@@ -912,11 +1096,22 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
           approved_by_user_id = ?,
           approved_by_name = ?,
           approved_at = CURRENT_TIMESTAMP,
+          work_schedule = ?,
+          contract_type = ?,
+          contract_end_date = ?,
+          rejected_by_user_id = NULL,
           rejected_at = NULL,
           admin_signature_path = NULL
         WHERE id = ?
       `,
-      [sessionUser.id, sessionUser.username, contractId],
+      [
+        sessionUser.id,
+        approverDisplayName,
+        workSchedule,
+        contractType,
+        contractType === "FIXED" ? contractEndDate : null,
+        contractId,
+      ],
     );
 
     await connection.commit();
@@ -926,8 +1121,12 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
       message: "Contractul a fost aprobat, iar utilizatorul a devenit ANGAJAT.",
       approval: {
         approvedByUserId: sessionUser.id,
-        approvedByName: sessionUser.username,
+        approvedByName: approverDisplayName,
         approvedAt: new Date().toISOString(),
+        rankId,
+        workSchedule,
+        contractType,
+        contractEndDate: contractType === "FIXED" ? contractEndDate : null,
       },
     });
   } catch (error) {
@@ -945,6 +1144,8 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
 });
 
 router.post("/admin/:contractId/reject", requireAdmin, async (req, res) => {
+  const connection = await db.getConnection();
+
   try {
     const contractId = Number(req.params.contractId);
     const sessionUser = req.session.user;
@@ -963,24 +1164,18 @@ router.post("/admin/:contractId/reject", requireAdmin, async (req, res) => {
       });
     }
 
-    const [result] = await db.execute<ResultSetHeader>(
-      `
-        UPDATE employee_contracts
-        SET
-          status = 'REJECTED',
-          rejected_by_user_id = ?,
-          rejected_at = CURRENT_TIMESTAMP,
-          approved_at = NULL,
-          approved_by_user_id = NULL,
-          approved_by_name = NULL,
-          admin_signature_path = NULL
-        WHERE id = ?
-          AND status = 'PENDING_REVIEW'
-      `,
-      [sessionUser.id, contractId],
+    const rejecterDisplayName = await getUserDisplayName(
+      connection,
+      sessionUser.id,
+      sessionUser.username,
     );
 
-    if (result.affectedRows === 0) {
+    const updated = await contractsDatabase.rejectContract(
+      contractId,
+      sessionUser.id,
+    );
+
+    if (!updated) {
       return res.status(404).json({
         success: false,
         message: "Contractul nu există sau nu mai este în așteptare.",
@@ -990,6 +1185,11 @@ router.post("/admin/:contractId/reject", requireAdmin, async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Contract respins.",
+      rejection: {
+        rejectedByUserId: sessionUser.id,
+        rejectedByName: rejecterDisplayName,
+        rejectedAt: new Date().toISOString(),
+      },
     });
   } catch (error) {
     console.error("Reject contract error:", error);
@@ -997,6 +1197,66 @@ router.post("/admin/:contractId/reject", requireAdmin, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Eroare internă la respingerea contractului.",
+    });
+  } finally {
+    connection.release();
+  }
+});
+
+router.get("/admin/:contractId/document", requireAdmin, async (req, res) => {
+  try {
+    const contractId = Number(req.params.contractId);
+
+    if (!Number.isInteger(contractId) || contractId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "ID-ul contractului nu este valid.",
+      });
+    }
+
+    const [rows] = await db.query<GeneratedContractRow[]>(
+      `
+          SELECT
+            ed.document_number,
+            ed.current_version,
+            edv.png_path,
+            edv.pdf_path,
+            edv.generated_at
+          FROM employee_documents ed
+          INNER JOIN employee_document_versions edv
+            ON edv.document_id = ed.id
+            AND edv.version_number = ed.current_version
+          WHERE ed.contract_id = ?
+          LIMIT 1
+        `,
+      [contractId],
+    );
+
+    const document = rows[0];
+
+    if (!document) {
+      return res.status(200).json({
+        success: true,
+        document: null,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      document: {
+        documentNumber: document.document_number,
+        currentVersion: document.current_version,
+        pngPath: document.png_path,
+        pdfPath: document.pdf_path,
+        generatedAt: document.generated_at,
+      },
+    });
+  } catch (error) {
+    console.error("Get generated contract error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Documentul generat nu a putut fi încărcat.",
     });
   }
 });
