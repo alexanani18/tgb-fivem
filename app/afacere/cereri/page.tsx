@@ -9,7 +9,6 @@ import {
   ChevronRight,
   ClipboardList,
   Clock3,
-  FileText,
   RefreshCw,
   Search,
   XCircle,
@@ -353,7 +352,6 @@ export default function AdminRequestsPage() {
                       <option value="PENDING">În așteptare</option>
                       <option value="APPROVED">Aprobate</option>
                       <option value="REJECTED">Respinse</option>
-                      <option value="CANCELLED">Anulate</option>
                     </select>
                   </div>
                 </div>

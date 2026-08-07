@@ -748,7 +748,7 @@ function ResignationProgress({
         <ProgressStep
           failed
           label="Cerere respinsă"
-          description="Administratorul a respins cererea."
+          description={`${resignation.reviewerName} a respins cererea.`}
         />
       </div>
     );
