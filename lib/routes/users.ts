@@ -572,6 +572,17 @@ router.get("/export/excel", requireAdmin, async (req, res) => {
       `,
     );
 
+    const [ranks] = await db.execute<RankRow[]>(
+      `
+        SELECT
+          id,
+          name,
+          sort_order
+        FROM user_ranks
+        ORDER BY sort_order ASC, name ASC
+      `,
+    );
+
     const workbook = new ExcelJS.Workbook();
 
     const exportedBy = req.session.user?.username ?? "ADMIN";
@@ -906,28 +917,28 @@ router.get("/export/excel", requireAdmin, async (req, res) => {
     |--------------------------------------------------------------------------
     */
 
-    const rankGroups = [
-      {
-        name: "Blackfold Manager",
-        title: "BLACKFOLD MANAGER",
-        fill: colors.manager,
-      },
-      {
-        name: "Blackfold Specialist",
-        title: "BLACKFOLD SPECIALIST",
-        fill: colors.specialist,
-      },
-      {
-        name: "Blackfold Crew",
-        title: "BLACKFOLD CREW",
-        fill: colors.crew,
-      },
-      {
-        name: "Fără grad",
-        title: "FĂRĂ GRAD",
-        fill: colors.noRank,
-      },
+    const rankGroupColors = [
+      colors.manager,
+      "FF3A2D14",
+      colors.specialist,
+      colors.crew,
+      "FF233B2D",
+      "FF3B2448",
+      "FF40351E",
+      "FF1F3540",
     ];
+
+    const rankGroups = ranks.map((rank, index) => ({
+      name: rank.name,
+      title: rank.name.toUpperCase(),
+      fill: rankGroupColors[index % rankGroupColors.length],
+    }));
+
+    rankGroups.push({
+      name: "Fără grad",
+      title: "FĂRĂ GRAD",
+      fill: colors.noRank,
+    });
 
     let currentRowNumber = 7;
     let globalEmployeeNumber = 1;
@@ -1106,18 +1117,6 @@ router.get("/export/excel", requireAdmin, async (req, res) => {
     |--------------------------------------------------------------------------
     */
 
-    const managerCount = employees.filter(
-      (employee) => employee.employee_rank === "Blackfold Manager",
-    ).length;
-
-    const specialistCount = employees.filter(
-      (employee) => employee.employee_rank === "Blackfold Specialist",
-    ).length;
-
-    const crewCount = employees.filter(
-      (employee) => employee.employee_rank === "Blackfold Crew",
-    ).length;
-
     const meetingAttendanceCount = employees.filter((employee) =>
       Boolean(employee.meeting_attendance),
     ).length;
@@ -1136,15 +1135,35 @@ router.get("/export/excel", requireAdmin, async (req, res) => {
 
     const summaryCell = worksheet.getCell(`A${currentRowNumber}`);
 
-    summaryCell.value =
-      `TOTAL ANGAJAȚI: ${employees.length}     |     ` +
-      `MANAGERI: ${managerCount}     |     ` +
-      `SPECIALIȘTI: ${specialistCount}     |     ` +
-      `CREW: ${crewCount}\n` +
+    const rankSummary = ranks
+      .map((rank) => {
+        const count = employees.filter(
+          (employee) => employee.employee_rank === rank.name,
+        ).length;
+
+        return `${rank.name.toUpperCase()}: ${count}`;
+      })
+      .join("     |     ");
+
+    const noRankCount = employees.filter(
+      (employee) => !employee.employee_rank,
+    ).length;
+
+    const summaryLines = [
+      [
+        `TOTAL ANGAJAȚI: ${employees.length}`,
+        rankSummary,
+        ...(noRankCount > 0 ? [`FĂRĂ GRAD: ${noRankCount}`] : []),
+      ]
+        .filter(Boolean)
+        .join("     |     "),
       `PREZENȚĂ ȘEDINȚĂ: ${meetingAttendanceCount}     |     ` +
-      `UNIFORMĂ: ${uniformCount}     |     ` +
-      `MAȘINĂ: ${carCount}     |     ` +
-      `✓ = DA     ✕ = NU`;
+        `UNIFORMĂ: ${uniformCount}     |     ` +
+        `MAȘINĂ: ${carCount}     |     ` +
+        `✓ = DA     ✕ = NU`,
+    ];
+
+    summaryCell.value = summaryLines.join("\n");
 
     summaryCell.font = {
       name: "Arial",
