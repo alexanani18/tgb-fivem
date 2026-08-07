@@ -2,6 +2,7 @@ import { Router } from "express";
 
 import { requireAuth } from "../services/requireAuth";
 import { requireAdmin } from "../services/requireAdmin";
+import { syncWorkflowDiscordMessageSafe } from "../discord/workflowMessages";
 
 import {
   approveResignationRequest,
@@ -57,6 +58,8 @@ router.post("/", requireAuth, async (req, res) => {
       effectiveDate,
       reason,
     });
+
+    void syncWorkflowDiscordMessageSafe(resignation.workflow.id);
 
     return res.status(201).json({
       success: true,
@@ -191,6 +194,8 @@ router.post("/:id/approve", requireAdmin, async (req, res) => {
       adminId,
     );
 
+    void syncWorkflowDiscordMessageSafe(workflowRequestId);
+
     return res.json({
       success: true,
       message: "Resignation request approved successfully.",
@@ -251,6 +256,8 @@ router.post("/:id/reject", requireAdmin, async (req, res) => {
       rejectionReason,
     });
 
+    void syncWorkflowDiscordMessageSafe(workflowRequestId);
+
     return res.json({
       success: true,
       message: "Resignation request rejected successfully.",
@@ -299,6 +306,8 @@ router.post("/:id/uniform-return", requireAdmin, async (req, res) => {
       adminId,
     );
 
+    void syncWorkflowDiscordMessageSafe(workflowRequestId);
+
     return res.json({
       success: true,
       message: "Uniform return confirmed successfully.",
@@ -346,6 +355,8 @@ router.post("/:id/complete", requireAdmin, async (req, res) => {
       workflowRequestId,
       adminId,
     );
+
+    void syncWorkflowDiscordMessageSafe(workflowRequestId);
 
     return res.json({
       success: true,

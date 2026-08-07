@@ -421,7 +421,7 @@ export default function AdminRequestDetailsPage() {
         throw new Error(data.message ?? "Operația nu a putut fi efectuată.");
       }
 
-      setSuccessMessage(data.message ?? successFallback);
+      setSuccessMessage(successFallback);
 
       setModalType(null);
       setRejectionReason("");

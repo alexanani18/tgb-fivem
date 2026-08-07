@@ -203,6 +203,11 @@ const sidebarSections: SidebarSection[] = [
             href: "/afacere/management/ranks",
             icon: Archive,
           },
+          {
+            label: "Discord - Cereri",
+            href: "/afacere/management/discord-workflow",
+            icon: ServerCog,
+          },
         ],
       },
     ],

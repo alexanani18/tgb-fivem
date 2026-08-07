@@ -18,6 +18,7 @@ import ranksRouter from "./routes/ranks";
 import { startupDiscord } from "./discord/startup";
 import resignationsRouter from "./routes/resignations";
 import workflowsRouter from "./routes/workflows";
+import workflowDiscordRouter from "./routes/workflowDiscord";
 
 const app = express();
 
@@ -94,6 +95,7 @@ app.use("/api/uniforms", uniformRoutes);
 app.use("/ranks", ranksRouter);
 app.use("/resignations", resignationsRouter);
 app.use("/workflows", workflowsRouter);
+app.use("/workflow-discord", workflowDiscordRouter);
 
 /*
 |--------------------------------------------------------------------------

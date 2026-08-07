@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   AlertCircle,
   CalendarDays,
   Check,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   ClipboardCheck,
   Clock3,
@@ -67,12 +69,6 @@ interface ResignationForm {
   confirmed: boolean;
 }
 
-const EMPTY_FORM: ResignationForm = {
-  effectiveDate: "",
-  reason: "",
-  confirmed: false,
-};
-
 function formatDate(dateValue: string | null): string {
   if (!dateValue) {
     return "—";
@@ -89,6 +85,64 @@ function formatDate(dateValue: string | null): string {
     month: "long",
     year: "numeric",
   }).format(date);
+}
+
+function getTodayDate(): string {
+  const now = new Date();
+
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function createEmptyForm(): ResignationForm {
+  return {
+    effectiveDate: getTodayDate(),
+    reason: "",
+    confirmed: false,
+  };
+}
+
+function formatDateInputValue(value: string): string {
+  if (!value) {
+    return "";
+  }
+
+  const [year, month, day] = value.split("-");
+
+  if (!year || !month || !day) {
+    return value;
+  }
+
+  return `${day}/${month}/${year}`;
+}
+
+function parseDateInputValue(value: string): Date {
+  const [year, month, day] = value.split("-").map(Number);
+
+  if (!year || !month || !day) {
+    return new Date();
+  }
+
+  return new Date(year, month - 1, day);
+}
+
+function toDateInputValue(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function isSameDay(firstDate: Date, secondDate: Date): boolean {
+  return (
+    firstDate.getFullYear() === secondDate.getFullYear() &&
+    firstDate.getMonth() === secondDate.getMonth() &&
+    firstDate.getDate() === secondDate.getDate()
+  );
 }
 
 function formatDateTime(dateValue: string | null): string {
@@ -109,16 +163,6 @@ function formatDateTime(dateValue: string | null): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
-}
-
-function getTodayValue(): string {
-  const now = new Date();
-
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
 }
 
 function getResignationDisplayStatus(resignation: ResignationListItem): {
@@ -176,7 +220,7 @@ function getResignationDisplayStatus(resignation: ResignationListItem): {
 export default function ResignationPage() {
   const [resignations, setResignations] = useState<ResignationListItem[]>([]);
 
-  const [form, setForm] = useState<ResignationForm>(EMPTY_FORM);
+  const [form, setForm] = useState<ResignationForm>(createEmptyForm);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -282,7 +326,7 @@ export default function ResignationPage() {
       return;
     }
 
-    if (effectiveDate < getTodayValue()) {
+    if (effectiveDate < getTodayDate()) {
       setErrorMessage("Data demisiei nu poate fi în trecut.");
       return;
     }
@@ -325,7 +369,7 @@ export default function ResignationPage() {
         );
       }
 
-      setForm(EMPTY_FORM);
+      setForm(createEmptyForm());
 
       setSuccessMessage(data.message ?? "Cererea de demisie a fost trimisă.");
 
@@ -446,6 +490,69 @@ function ResignationFormCard({
   submitResignation,
 }: ResignationFormCardProps) {
   const disabled = Boolean(activeResignation);
+  const calendarRef = useRef<HTMLDivElement | null>(null);
+
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const selectedDate = parseDateInputValue(form.effectiveDate);
+
+    return new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+  });
+
+  useEffect(() => {
+    if (!isDatePickerOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target;
+
+      if (
+        target instanceof Node &&
+        calendarRef.current &&
+        !calendarRef.current.contains(target)
+      ) {
+        setIsDatePickerOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [isDatePickerOpen]);
+
+  function toggleDatePicker() {
+    if (disabled) {
+      return;
+    }
+
+    if (!isDatePickerOpen) {
+      const selectedDate = parseDateInputValue(form.effectiveDate);
+
+      setCalendarMonth(
+        new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1),
+      );
+    }
+
+    setIsDatePickerOpen((currentValue) => !currentValue);
+  }
+
+  function selectDate(date: Date) {
+    const today = parseDateInputValue(getTodayDate());
+
+    if (date < today) {
+      return;
+    }
+
+    setForm((currentForm) => ({
+      ...currentForm,
+      effectiveDate: toDateInputValue(date),
+    }));
+
+    setIsDatePickerOpen(false);
+  }
 
   return (
     <section className="h-fit rounded-2xl border border-white/10 bg-white/[0.04] p-5">
@@ -483,31 +590,48 @@ function ResignationFormCard({
       )}
 
       <div className="mt-6 space-y-5">
-        <label className="block">
+        <div className="block">
           <span className="mb-2 block text-sm font-medium text-zinc-300">
             Data dorită a demisiei
           </span>
 
-          <input
-            type="date"
-            value={form.effectiveDate}
-            min={getTodayValue()}
-            disabled={disabled}
-            onChange={(event) =>
-              setForm((currentForm) => ({
-                ...currentForm,
-                effectiveDate: event.target.value,
-              }))
-            }
-            className="w-full rounded-xl border border-white/10 bg-black/50 px-4 py-3 text-sm text-white outline-none transition focus:border-[#B8904D]/60 disabled:cursor-not-allowed disabled:opacity-40"
-          />
+          <div ref={calendarRef} className="relative w-full">
+            <button
+              type="button"
+              onClick={toggleDatePicker}
+              disabled={disabled}
+              aria-haspopup="dialog"
+              aria-expanded={isDatePickerOpen}
+              className={`flex w-full items-center justify-between gap-4 rounded-xl border border-white/10 bg-black/50 px-4 py-3 text-left text-sm text-white outline-none transition ${
+                disabled
+                  ? "cursor-not-allowed opacity-40"
+                  : "cursor-pointer hover:border-[#B8904D]/40 focus:border-[#B8904D]/60"
+              }`}
+            >
+              <span>{formatDateInputValue(form.effectiveDate)}</span>
+
+              <CalendarDays
+                aria-hidden="true"
+                className="h-4 w-4 shrink-0 text-white"
+              />
+            </button>
+
+            {isDatePickerOpen && (
+              <DatePickerPopover
+                selectedValue={form.effectiveDate}
+                month={calendarMonth}
+                onMonthChange={setCalendarMonth}
+                onSelectDate={selectDate}
+              />
+            )}
+          </div>
 
           <p className="mt-2 text-xs leading-5 text-zinc-500">
             Aceasta este data solicitată. Demisia nu este finalizată automat
             până când uniforma nu este predată și confirmată de un
             administrator.
           </p>
-        </label>
+        </div>
 
         <label className="block">
           <span className="mb-2 block text-sm font-medium text-zinc-300">
@@ -581,6 +705,144 @@ function ResignationFormCard({
         </button>
       </div>
     </section>
+  );
+}
+
+function DatePickerPopover({
+  selectedValue,
+  month,
+  onMonthChange,
+  onSelectDate,
+}: {
+  selectedValue: string;
+  month: Date;
+  onMonthChange: (month: Date) => void;
+  onSelectDate: (date: Date) => void;
+}) {
+  const today = parseDateInputValue(getTodayDate());
+  const selectedDate = parseDateInputValue(selectedValue);
+
+  const monthLabel = new Intl.DateTimeFormat("ro-RO", {
+    month: "long",
+    year: "numeric",
+  }).format(month);
+
+  const firstDayOfMonth = new Date(month.getFullYear(), month.getMonth(), 1);
+
+  const mondayBasedStartOffset = (firstDayOfMonth.getDay() + 6) % 7;
+
+  const calendarStart = new Date(
+    month.getFullYear(),
+    month.getMonth(),
+    1 - mondayBasedStartOffset,
+  );
+
+  const days = Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(calendarStart);
+    date.setDate(calendarStart.getDate() + index);
+
+    return date;
+  });
+
+  const weekDays = ["Lu", "Ma", "Mi", "Jo", "Vi", "Sâ", "Du"];
+
+  function changeMonth(offset: number) {
+    onMonthChange(new Date(month.getFullYear(), month.getMonth() + offset, 1));
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-label="Selectează data demisiei"
+      className="absolute left-0 top-[calc(100%+10px)] z-50 w-[310px] rounded-2xl border border-white/10 bg-[#0B0B0B]/98 p-4 shadow-[0_24px_70px_rgba(0,0,0,0.65)] backdrop-blur-xl"
+    >
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => changeMonth(-1)}
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-zinc-300 transition hover:border-[#B8904D]/40 hover:bg-[#B8904D]/10 hover:text-[#D5B477]"
+          aria-label="Luna anterioară"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+
+        <p className="text-sm font-semibold text-white capitalize">
+          {monthLabel}
+        </p>
+
+        <button
+          type="button"
+          onClick={() => changeMonth(1)}
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-zinc-300 transition hover:border-[#B8904D]/40 hover:bg-[#B8904D]/10 hover:text-[#D5B477]"
+          aria-label="Luna următoare"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="mt-4 grid grid-cols-7 gap-1">
+        {weekDays.map((weekDay) => (
+          <div
+            key={weekDay}
+            className="flex h-8 items-center justify-center text-[11px] font-semibold uppercase tracking-wide text-zinc-500"
+          >
+            {weekDay}
+          </div>
+        ))}
+
+        {days.map((date) => {
+          const isCurrentMonth = date.getMonth() === month.getMonth();
+
+          const isPast = date < today;
+          const isSelected = isSameDay(date, selectedDate);
+          const isToday = isSameDay(date, today);
+
+          return (
+            <button
+              key={toDateInputValue(date)}
+              type="button"
+              onClick={() => onSelectDate(date)}
+              disabled={isPast}
+              className={`relative flex h-9 w-9 items-center justify-center rounded-lg text-xs font-medium transition ${
+                isSelected
+                  ? "bg-[#B8904D] text-black shadow-[0_0_18px_rgba(184,144,77,0.20)]"
+                  : isPast
+                    ? "cursor-not-allowed text-zinc-700"
+                    : isCurrentMonth
+                      ? "text-zinc-200 hover:bg-[#B8904D]/15 hover:text-[#D5B477]"
+                      : "text-zinc-600 hover:bg-white/5 hover:text-zinc-400"
+              }`}
+            >
+              {date.getDate()}
+
+              {isToday && !isSelected && (
+                <span className="absolute bottom-1 h-1 w-1 rounded-full bg-[#B8904D]" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3">
+        <span className="text-[11px] text-zinc-500">Format: zz/ll/aaaa</span>
+
+        <button
+          type="button"
+          onClick={() => {
+            const currentDate = parseDateInputValue(getTodayDate());
+
+            onMonthChange(
+              new Date(currentDate.getFullYear(), currentDate.getMonth(), 1),
+            );
+
+            onSelectDate(currentDate);
+          }}
+          className="rounded-lg px-3 py-1.5 text-xs font-semibold text-[#D5B477] transition hover:bg-[#B8904D]/10"
+        >
+          Astăzi
+        </button>
+      </div>
+    </div>
   );
 }
 
