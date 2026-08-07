@@ -1,25 +1,33 @@
 import "dotenv/config";
 
 import { db } from "../../lib/db";
-import { dropTables } from "./utils";
+import { dropTables, ensureDatabaseExists } from "./utils";
 
 async function main() {
-  const connection = await db.getConnection();
-
   try {
     console.log("\n==========================================");
     console.log("🗑️ Resetare bază de date");
     console.log("==========================================");
 
-    await dropTables(connection);
+    /*
+     * Dacă DB_NAME lipsește complet, o creăm mai întâi.
+     * Astfel db:fresh funcționează și pe un setup nou.
+     */
+    await ensureDatabaseExists();
 
-    console.log("\n✅ Toate tabelele aplicației au fost șterse.\n");
+    const connection = await db.getConnection();
+
+    try {
+      await dropTables(connection);
+      console.log("\n✅ Toate tabelele aplicației au fost șterse.\n");
+    } finally {
+      connection.release();
+    }
   } catch (error) {
     console.error("\n❌ Resetarea bazei de date a eșuat.");
     console.error(error);
     process.exitCode = 1;
   } finally {
-    connection.release();
     await db.end();
   }
 }
