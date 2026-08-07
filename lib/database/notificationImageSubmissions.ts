@@ -1,5 +1,5 @@
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
-
+import type { PoolConnection } from "mysql2/promise";
 import { db } from "../db";
 
 export interface NotificationImageRow extends RowDataPacket {
@@ -282,4 +282,51 @@ export async function rejectSubmission(
   );
 
   return result.affectedRows;
+}
+
+
+export async function approveSubmission(
+  connection: PoolConnection,
+  submissionId: number,
+  reviewedBy: number,
+): Promise<boolean> {
+
+const [result] = await connection.execute<ResultSetHeader>(
+  `
+    UPDATE notification_image_submissions
+    SET
+      status = 'APPROVED',
+      reviewed_by = ?,
+      reviewed_at = CURRENT_TIMESTAMP,
+      rejection_reason = NULL
+    WHERE id = ?
+      AND status = 'PENDING'
+  `,
+  [reviewedBy, submissionId],
+);
+
+return result.affectedRows > 0;
+}
+
+export async function rejectDuplicatePendingSubmissions(
+  connection: PoolConnection,
+  notificationImageId: number,
+  approvedSubmissionId: number,
+  reviewedBy: number,
+): Promise<void> {
+  await connection.execute<ResultSetHeader>(
+    `
+      UPDATE notification_image_submissions
+      SET
+        status = 'REJECTED',
+        reviewed_by = ?,
+        reviewed_at = CURRENT_TIMESTAMP,
+        rejection_reason =
+          'O altă dovadă pentru această imagine a fost aprobată.'
+      WHERE notification_image_id = ?
+        AND id <> ?
+        AND status = 'PENDING'
+    `,
+    [reviewedBy, notificationImageId, approvedSubmissionId],
+  );
 }

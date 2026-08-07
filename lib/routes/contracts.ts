@@ -2,7 +2,6 @@ import fs from "fs";
 import path from "path";
 import { Router } from "express";
 import multer from "multer";
-import type { ResultSetHeader, RowDataPacket } from "mysql2";
 
 import { db } from "../db";
 import { requireAuth } from "../services/requireAuth";
@@ -83,52 +82,6 @@ function deleteUploadedFile(filePath?: string): void {
   });
 }
 
-type ContractStatus =
-  | "DRAFT"
-  | "PENDING_REVIEW"
-  | "APPROVED"
-  | "REJECTED"
-  | "BLOCKED";
-
-interface GeneratedContractRow extends RowDataPacket {
-  document_number: string;
-  current_version: number;
-  png_path: string;
-  pdf_path: string;
-  generated_at: Date;
-}
-
-interface UserDisplayNameRow extends RowDataPacket {
-  display_name: string;
-}
-
-async function getUserDisplayName(
-  connection: Awaited<ReturnType<typeof db.getConnection>>,
-  userId: number,
-  fallbackUsername: string,
-): Promise<string> {
-  const [rows] = await connection.execute<UserDisplayNameRow[]>(
-    `
-      SELECT
-        COALESCE(
-          NULLIF(
-            TRIM(CONCAT_WS(' ', ec.last_name, ec.first_name)),
-            ''
-          ),
-          u.username
-        ) AS display_name
-      FROM users u
-      LEFT JOIN employee_contracts ec
-        ON ec.user_id = u.id
-      WHERE u.id = ?
-      LIMIT 1
-    `,
-    [userId],
-  );
-
-  return rows[0]?.display_name?.trim() || fallbackUsername;
-}
-
 router.get("/me", requireAuth, async (req, res) => {
   try {
     const sessionUser = req.session.user;
@@ -206,28 +159,10 @@ router.get("/me/document", async (req, res) => {
       });
     }
 
-    const [rows] = await db.query<GeneratedContractRow[]>(
-      `
-        SELECT
-          ed.document_number,
-          ed.current_version,
-          edv.png_path,
-          edv.pdf_path,
-          edv.generated_at
-        FROM employee_documents ed
-        INNER JOIN employee_document_versions edv
-          ON edv.document_id = ed.id
-          AND edv.version_number = ed.current_version
-        INNER JOIN employee_contracts ec
-          ON ec.id = ed.contract_id
-        WHERE ec.user_id = ?
-          AND ec.status = 'APPROVED'
-        LIMIT 1
-      `,
-      [sessionUser.id],
-    );
-
-    const document = rows[0];
+    const document =
+      await contractsDatabase.getGeneratedDocumentByUserId(
+        sessionUser.id,
+      );
 
     if (!document) {
       return res.status(200).json({
@@ -423,31 +358,11 @@ router.post(
     try {
       await connection.beginTransaction();
 
-      interface ExistingContractRow extends RowDataPacket {
-        id: number;
-        status: ContractStatus;
-        identity_image_path: string;
-        contract_creation_blocked: number;
-      }
-
-      const [existingContracts] = await connection.execute<
-        ExistingContractRow[]
-      >(
-        `
-            SELECT
-              id,
-              status,
-              identity_image_path,
-              contract_creation_blocked
-            FROM employee_contracts
-            WHERE user_id = ?
-            LIMIT 1
-            FOR UPDATE
-          `,
-        [sessionUser.id],
-      );
-
-      const existingContract = existingContracts[0];
+      const existingContract =
+        await contractsDatabase.getExistingContract(
+          connection,
+          sessionUser.id,
+        );
 
       if (existingContract?.contract_creation_blocked) {
         await connection.rollback();
@@ -485,92 +400,36 @@ router.post(
       if (existingContract) {
         previousIdentityImagePath = existingContract.identity_image_path;
 
-        await connection.execute<ResultSetHeader>(
-          `
-            UPDATE employee_contracts
-            SET
-              first_name = ?,
-              last_name = ?,
-              age = ?,
-              game_id = ?,
-              ci_series = ?,
-              phone_number = ?,
-              city_hours = ?,
-              identity_image_path = ?,
-              accepted_rules = 1,
-              employee_signature_name = ?,
-              status = 'PENDING_REVIEW',
-              signed_at = CURRENT_TIMESTAMP,
-              approved_by_user_id = NULL,
-              approved_by_name = NULL,
-              admin_signature_path = NULL,
-              approved_at = NULL,
-              work_schedule = NULL,
-              contract_type = NULL,
-              contract_end_date = NULL,
-              rejected_by_user_id = NULL,
-              rejected_at = NULL
-            WHERE id = ?
-          `,
-          [
-            normalizedFirstName,
-            normalizedLastName,
-            normalizedAge,
-            normalizedGameId,
-            normalizedCiSeries,
-            normalizedPhoneNumber,
-            normalizedCityHours,
+        await contractsDatabase.updatePendingEmployeeContract(
+          connection,
+          existingContract.id,
+          {
+            firstName: normalizedFirstName,
+            lastName: normalizedLastName,
+            age: normalizedAge,
+            gameId: normalizedGameId,
+            ciSeries: normalizedCiSeries,
+            phoneNumber: normalizedPhoneNumber,
+            cityHours: normalizedCityHours,
             identityImagePath,
             employeeSignatureName,
-            existingContract.id,
-          ],
+          },
         );
       } else {
-        await connection.execute<ResultSetHeader>(
-          `
-            INSERT INTO employee_contracts (
-              user_id,
-              first_name,
-              last_name,
-              age,
-              game_id,
-              ci_series,
-              phone_number,
-              city_hours,
-              identity_image_path,
-              accepted_rules,
-              employee_signature_name,
-              status,
-              signed_at
-            )
-            VALUES (
-              ?,
-              ?,
-              ?,
-              ?,
-              ?,
-              ?,
-              ?,
-              ?,
-              ?,
-              1,
-              ?,
-              'PENDING_REVIEW',
-              CURRENT_TIMESTAMP
-            )
-          `,
-          [
-            sessionUser.id,
-            normalizedFirstName,
-            normalizedLastName,
-            normalizedAge,
-            normalizedGameId,
-            normalizedCiSeries,
-            normalizedPhoneNumber,
-            normalizedCityHours,
+        await contractsDatabase.createPendingEmployeeContract(
+          connection,
+          {
+            userId: sessionUser.id,
+            firstName: normalizedFirstName,
+            lastName: normalizedLastName,
+            age: normalizedAge,
+            gameId: normalizedGameId,
+            ciSeries: normalizedCiSeries,
+            phoneNumber: normalizedPhoneNumber,
+            cityHours: normalizedCityHours,
             identityImagePath,
             employeeSignatureName,
-          ],
+          },
         );
       }
 
@@ -708,7 +567,7 @@ router.post("/admin/:contractId/generate", requireAdmin, async (req, res) => {
 
       const contractEndDate =
         typeof requestBody.contractEndDate === "string" &&
-        requestBody.contractEndDate.trim()
+          requestBody.contractEndDate.trim()
           ? requestBody.contractEndDate.trim()
           : null;
 
@@ -759,25 +618,17 @@ router.post("/admin/:contractId/generate", requireAdmin, async (req, res) => {
         }
       }
 
-      const [updateResult] = await db.execute<ResultSetHeader>(
-        `
-          UPDATE employee_contracts
-          SET
-            work_schedule = ?,
-            contract_type = ?,
-            contract_end_date = ?
-          WHERE id = ?
-            AND status = 'APPROVED'
-        `,
-        [
+      const updated = await contractsDatabase.updateApprovedContract(
+        contractId,
+        {
           workSchedule,
           contractType,
-          contractType === "FIXED" ? contractEndDate : null,
-          contractId,
-        ],
+          contractEndDate:
+            contractType === "FIXED" ? contractEndDate : null,
+        },
       );
 
-      if (updateResult.affectedRows === 0) {
+      if (!updated) {
         return res.status(409).json({
           success: false,
           message:
@@ -913,7 +764,7 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
 
     const contractEndDate =
       typeof req.body.contractEndDate === "string" &&
-      req.body.contractEndDate.trim()
+        req.body.contractEndDate.trim()
         ? req.body.contractEndDate.trim()
         : null;
 
@@ -987,27 +838,12 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
 
     await connection.beginTransaction();
 
-    interface ContractApprovalRow extends RowDataPacket {
-      id: number;
-      user_id: number;
-      status: ContractStatus;
-    }
-
-    interface RankExistsRow extends RowDataPacket {
-      id: number;
-    }
-
-    const [rankRows] = await connection.execute<RankExistsRow[]>(
-      `
-        SELECT id
-        FROM user_ranks
-        WHERE id = ?
-        LIMIT 1
-      `,
-      [rankId],
+    const rankExists = await contractsDatabase.rankExists(
+      connection,
+      rankId,
     );
 
-    if (!rankRows[0]) {
+    if (!rankExists) {
       await connection.rollback();
 
       return res.status(404).json({
@@ -1016,21 +852,10 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
       });
     }
 
-    const [contracts] = await connection.execute<ContractApprovalRow[]>(
-      `
-        SELECT
-          id,
-          user_id,
-          status
-        FROM employee_contracts
-        WHERE id = ?
-        LIMIT 1
-        FOR UPDATE
-      `,
-      [contractId],
+    const contract = await contractsDatabase.getContractForApproval(
+      connection,
+      contractId,
     );
-
-    const contract = contracts[0];
 
     if (!contract) {
       await connection.rollback();
@@ -1050,29 +875,28 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
       });
     }
 
-    const [userResult] = await connection.execute<ResultSetHeader>(
-      `
-        UPDATE users
-        SET
-          user_role_id = (
-            SELECT id
-            FROM user_roles
-            WHERE name = 'ANGAJAT'
-            LIMIT 1
-          ),
-          user_rank_id = ?
-        WHERE id = ?
-          AND user_role_id = (
-            SELECT id
-            FROM user_roles
-            WHERE name = 'GUEST'
-            LIMIT 1
-          )
-      `,
-      [rankId, contract.user_id],
+    const approverDisplayName =
+      await contractsDatabase.getUserDisplayName(
+        connection,
+        sessionUser.id,
+        sessionUser.username,
+      );
+    const approved = await contractsDatabase.approveEmployeeContract(
+      connection,
+      contractId,
+      contract.user_id,
+      {
+        approverUserId: sessionUser.id,
+        approverName: approverDisplayName,
+        rankId,
+        workSchedule,
+        contractType,
+        contractEndDate:
+          contractType === "FIXED" ? contractEndDate : null,
+      },
     );
 
-    if (userResult.affectedRows === 0) {
+    if (!approved) {
       await connection.rollback();
 
       return res.status(409).json({
@@ -1081,38 +905,6 @@ router.post("/admin/:contractId/approve", requireAdmin, async (req, res) => {
           "Utilizatorul contractului nu mai are rolul GUEST și nu poate fi aprobat.",
       });
     }
-
-    const approverDisplayName = await getUserDisplayName(
-      connection,
-      sessionUser.id,
-      sessionUser.username,
-    );
-
-    await connection.execute<ResultSetHeader>(
-      `
-        UPDATE employee_contracts
-        SET
-          status = 'APPROVED',
-          approved_by_user_id = ?,
-          approved_by_name = ?,
-          approved_at = CURRENT_TIMESTAMP,
-          work_schedule = ?,
-          contract_type = ?,
-          contract_end_date = ?,
-          rejected_by_user_id = NULL,
-          rejected_at = NULL,
-          admin_signature_path = NULL
-        WHERE id = ?
-      `,
-      [
-        sessionUser.id,
-        approverDisplayName,
-        workSchedule,
-        contractType,
-        contractType === "FIXED" ? contractEndDate : null,
-        contractId,
-      ],
-    );
 
     await connection.commit();
 
@@ -1164,11 +956,12 @@ router.post("/admin/:contractId/reject", requireAdmin, async (req, res) => {
       });
     }
 
-    const rejecterDisplayName = await getUserDisplayName(
-      connection,
-      sessionUser.id,
-      sessionUser.username,
-    );
+    const rejecterDisplayName =
+      await contractsDatabase.getUserDisplayName(
+        connection,
+        sessionUser.id,
+        sessionUser.username,
+      );
 
     const updated = await contractsDatabase.rejectContract(
       contractId,
@@ -1214,25 +1007,10 @@ router.get("/admin/:contractId/document", requireAdmin, async (req, res) => {
       });
     }
 
-    const [rows] = await db.query<GeneratedContractRow[]>(
-      `
-          SELECT
-            ed.document_number,
-            ed.current_version,
-            edv.png_path,
-            edv.pdf_path,
-            edv.generated_at
-          FROM employee_documents ed
-          INNER JOIN employee_document_versions edv
-            ON edv.document_id = ed.id
-            AND edv.version_number = ed.current_version
-          WHERE ed.contract_id = ?
-          LIMIT 1
-        `,
-      [contractId],
-    );
-
-    const document = rows[0];
+    const document =
+      await contractsDatabase.getGeneratedDocumentByContractId(
+        contractId,
+      );
 
     if (!document) {
       return res.status(200).json({

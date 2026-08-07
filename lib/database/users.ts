@@ -567,3 +567,194 @@ export async function updateEmployeeIdentityImage(
     [identityImagePath, userId],
   );
 }
+
+interface ArchiveUserRow extends RowDataPacket {
+  id: number;
+  username: string;
+  first_name: string | null;
+  last_name: string | null;
+  iban: string | number | null;
+  phone_number: string | null;
+  ci_series: string | null;
+  city_hours: string | number | null;
+  employee_rank: string | null;
+  employee_status: EmployeeStatus | null;
+  meeting_attendance: number | null;
+  has_uniform: number | null;
+  has_car: number | null;
+  observations: string | null;
+  discord_id: string | null;
+  created_at: Date;
+  website_role: UserRole;
+  is_active: number;
+}
+
+export async function getArchivedEmployees() {
+  const [rows] = await db.execute<ArchiveUserRow[]>(
+    `
+        SELECT
+          u.id,
+          u.username,
+          u.is_active,
+
+          ur.name AS website_role,
+
+          COALESCE(ec.first_name, NULL) AS first_name,
+          COALESCE(ec.last_name, NULL) AS last_name,
+
+          ec.game_id AS iban,
+          ec.phone_number,
+          ec.ci_series,
+          ec.city_hours,
+
+          rk.name AS employee_rank,
+
+          ed.status AS employee_status,
+          ed.meeting_attendance,
+          ed.has_uniform,
+          ed.has_car,
+          ed.observations,
+          ed.discord_id,
+
+          u.created_at
+
+        FROM users u
+
+        INNER JOIN user_roles ur
+          ON ur.id = u.user_role_id
+
+        LEFT JOIN user_ranks rk
+          ON rk.id = u.user_rank_id
+
+        LEFT JOIN employee_contracts ec
+          ON ec.user_id = u.id
+
+        LEFT JOIN employee_details ed
+          ON ed.user_id = u.id
+
+        WHERE
+          ur.name = 'GUEST'
+          OR ed.status = 'DEMISIONAT'
+          OR u.is_active = 0
+
+        ORDER BY
+          u.created_at DESC
+      `,
+  );
+  return rows;
+}
+
+export async function resignEmployee(
+  connection: PoolConnection,
+  userId: number,
+): Promise<void>
+
+export async function resignEmployee(
+  connection: PoolConnection,
+  userId: number,
+): Promise<void> {
+  await connection.execute<ResultSetHeader>(
+    `
+      UPDATE employee_details
+      SET status = 'DEMISIONAT'
+      WHERE user_id = ?
+    `,
+    [userId],
+  );
+
+  await connection.execute<ResultSetHeader>(
+    `
+      UPDATE users
+      SET is_active = 0
+      WHERE id = ?
+    `,
+    [userId],
+  );
+}
+
+export async function updateEmployeeContract(
+  connection: PoolConnection,
+  userId: number,
+  data: UpdateEmployeeContractData,
+): Promise<void> {
+  await connection.execute<ResultSetHeader>(
+    `
+      UPDATE employee_contracts
+      SET
+        first_name = ?,
+        last_name = ?,
+        age = ?,
+        game_id = ?,
+        ci_series = ?,
+        phone_number = ?,
+        city_hours = ?,
+        status = ?,
+        employee_signature_name = ?
+      WHERE user_id = ?
+    `,
+    [
+      data.firstName,
+      data.lastName,
+      data.age,
+      data.gameId,
+      data.ciSeries,
+      data.phoneNumber,
+      data.cityHours,
+      data.status,
+      data.signatureName,
+      userId,
+    ],
+  );
+}
+
+export async function employeeContractExists(
+  connection: PoolConnection,
+  userId: number,
+): Promise<boolean> {
+  const [rows] = await connection.execute<RowDataPacket[]>(
+    `
+      SELECT id
+      FROM employee_contracts
+      WHERE user_id = ?
+      LIMIT 1
+    `,
+    [userId],
+  );
+
+  return rows.length > 0;
+}
+
+export interface UpdateEmployeeContractData {
+  firstName: string;
+  lastName: string;
+  age: number;
+  gameId: string;
+  ciSeries: string;
+  phoneNumber: string;
+  cityHours: number;
+  status: string;
+  signatureName: string;
+}
+
+export interface RankLookupRow extends RowDataPacket {
+  id: number;
+  name: string;
+  sort_order: number;
+}
+
+export async function getRanksForExport(): Promise<RankLookupRow[]> {
+  const [rows] = await db.execute<RankLookupRow[]>(
+    `
+      SELECT
+        id,
+        name,
+        sort_order
+      FROM user_ranks
+      ORDER BY
+        sort_order ASC,
+        name ASC
+    `,
+  );
+
+  return rows;
+}

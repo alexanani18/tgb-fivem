@@ -10,8 +10,6 @@ import {
 
 import multer from "multer";
 
-import { type ResultSetHeader,} from "mysql2";
-
 import { db } from "../db";
 
 import * as notificationSubmissionsDatabase from "../database/notificationImageSubmissions";
@@ -436,21 +434,14 @@ router.patch(
       try {
         await connection.beginTransaction();
 
-        const [result] = await connection.execute<ResultSetHeader>(
-          `
-              UPDATE notification_image_submissions
-              SET
-                status = 'APPROVED',
-                reviewed_by = ?,
-                reviewed_at = CURRENT_TIMESTAMP,
-                rejection_reason = NULL
-              WHERE id = ?
-                AND status = 'PENDING'
-            `,
-          [sessionUser.id, submissionId],
-        );
+        const approved =
+          await notificationSubmissionsDatabase.approveSubmission(
+            connection,
+            submissionId,
+            sessionUser.id,
+          );
 
-        if (result.affectedRows === 0) {
+        if (!approved) {
           await connection.rollback();
 
           return res.status(409).json({
@@ -465,20 +456,11 @@ router.patch(
         | deoarece upload-ul este blocat cât timp există una PENDING.
         */
 
-        await connection.execute<ResultSetHeader>(
-          `
-            UPDATE notification_image_submissions
-            SET
-              status = 'REJECTED',
-              reviewed_by = ?,
-              reviewed_at = CURRENT_TIMESTAMP,
-              rejection_reason =
-                'O altă dovadă pentru această imagine a fost aprobată.'
-            WHERE notification_image_id = ?
-              AND id <> ?
-              AND status = 'PENDING'
-          `,
-          [sessionUser.id, submission.notification_image_id, submissionId],
+        await notificationSubmissionsDatabase.rejectDuplicatePendingSubmissions(
+          connection,
+          submission.notification_image_id,
+          submissionId,
+          sessionUser.id,
         );
 
         await connection.commit();

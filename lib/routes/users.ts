@@ -1,9 +1,5 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import type {
-  ResultSetHeader,
-  RowDataPacket,
-} from "mysql2/promise";
 import {
   createUser,
   getRoleByName,
@@ -16,6 +12,9 @@ import {
   updateEmployeeDetails,
   userRankExists,
   updateUser,
+  resignEmployee,
+  updateEmployeeContract,
+  employeeContractExists,
 } from "../database/users";
 import type {
   ContractStatus,
@@ -29,38 +28,10 @@ import ExcelJS from "exceljs";
 import * as usersDatabase from "../database/users";
 import { db } from "../db";
 import { requireAdmin } from "../services/requireAdmin";
+import * as ranksDatabase from "../database/ranks";
 
 const router = Router();
-interface RankRow extends RowDataPacket {
-  id: number;
-  name: string;
-  sort_order: number;
-}
 
-interface ArchiveUserRow extends RowDataPacket {
-  id: number;
-  username: string;
-  first_name: string | null;
-  last_name: string | null;
-  iban: string | number | null;
-  phone_number: string | null;
-  ci_series: string | null;
-  city_hours: string | number | null;
-  employee_rank: string | null;
-  employee_status: EmployeeStatus | null;
-  meeting_attendance: number | null;
-  has_uniform: number | null;
-  has_car: number | null;
-  observations: string | null;
-  discord_id: string | null;
-  created_at: Date;
-  website_role: UserRole;
-  is_active: number;
-}
-
-interface EmployeeContractExistsRow extends RowDataPacket {
-  id: number;
-}
 
 const CONTRACT_IDENTITIES_DIRECTORY = path.join(
   process.cwd(),
@@ -241,57 +212,7 @@ router.get("/", requireAdmin, async (_req, res) => {
 
 router.get("/archive", requireAdmin, async (_req, res) => {
   try {
-    const [users] = await db.execute<ArchiveUserRow[]>(
-      `
-        SELECT
-          u.id,
-          u.username,
-          u.is_active,
-
-          ur.name AS website_role,
-
-          COALESCE(ec.first_name, NULL) AS first_name,
-          COALESCE(ec.last_name, NULL) AS last_name,
-
-          ec.game_id AS iban,
-          ec.phone_number,
-          ec.ci_series,
-          ec.city_hours,
-
-          rk.name AS employee_rank,
-
-          ed.status AS employee_status,
-          ed.meeting_attendance,
-          ed.has_uniform,
-          ed.has_car,
-          ed.observations,
-          ed.discord_id,
-
-          u.created_at
-
-        FROM users u
-
-        INNER JOIN user_roles ur
-          ON ur.id = u.user_role_id
-
-        LEFT JOIN user_ranks rk
-          ON rk.id = u.user_rank_id
-
-        LEFT JOIN employee_contracts ec
-          ON ec.user_id = u.id
-
-        LEFT JOIN employee_details ed
-          ON ed.user_id = u.id
-
-        WHERE
-          ur.name = 'GUEST'
-          OR ed.status = 'DEMISIONAT'
-          OR u.is_active = 0
-
-        ORDER BY
-          u.created_at DESC
-      `,
-    );
+    const users = await usersDatabase.getArchivedEmployees();
 
     return res.status(200).json({
       success: true,
@@ -349,16 +270,7 @@ router.get("/export/excel", requireAdmin, async (req, res) => {
   try {
     const employees = await usersDatabase.getEmployeesForExcelExport();
 
-    const [ranks] = await db.execute<RankRow[]>(
-      `
-        SELECT
-          id,
-          name,
-          sort_order
-        FROM user_ranks
-        ORDER BY sort_order ASC, name ASC
-      `,
-    );
+const ranks = await ranksDatabase.getRanksForExport();
 
     const workbook = new ExcelJS.Workbook();
 
@@ -935,9 +847,9 @@ router.get("/export/excel", requireAdmin, async (req, res) => {
         .filter(Boolean)
         .join("     |     "),
       `PREZENȚĂ ȘEDINȚĂ: ${meetingAttendanceCount}     |     ` +
-        `UNIFORMĂ: ${uniformCount}     |     ` +
-        `MAȘINĂ: ${carCount}     |     ` +
-        `✓ = DA     ✕ = NU`,
+      `UNIFORMĂ: ${uniformCount}     |     ` +
+      `MAȘINĂ: ${carCount}     |     ` +
+      `✓ = DA     ✕ = NU`,
     ];
 
     summaryCell.value = summaryLines.join("\n");
@@ -1205,23 +1117,7 @@ router.patch("/:userId/resign", requireAdmin, async (req, res) => {
 
     await ensureEmployeeDetails(connection, userId);
 
-    await connection.execute<ResultSetHeader>(
-      `
-        UPDATE employee_details
-        SET status = 'DEMISIONAT'
-        WHERE user_id = ?
-      `,
-      [userId],
-    );
-
-    await connection.execute<ResultSetHeader>(
-      `
-        UPDATE users
-        SET is_active = 0
-        WHERE id = ?
-      `,
-      [userId],
-    );
+    await resignEmployee(connection, userId);
 
     await connection.commit();
 
@@ -1492,73 +1388,48 @@ router.patch("/:userId/contract", requireAdmin, async (req, res) => {
       });
     }
 
-    const [contracts] = await connection.execute<EmployeeContractExistsRow[]>(
-      `
-          SELECT id
-          FROM employee_contracts
-          WHERE user_id = ?
-          LIMIT 1
-        `,
-      [userId],
-    );
+    const contractExists = await employeeContractExists(connection, userId);
 
-    if (contracts.length === 0) {
+    if (!contractExists) {
+        await connection.rollback();
+
+        return res.status(404).json({
+          success: false,
+          message: "Contractul angajatului nu a fost găsit.",
+        });
+      }
+
+      await updateEmployeeContract(connection, userId, {
+        firstName: normalizedFirstName,
+        lastName: normalizedLastName,
+        age: normalizedAge,
+        gameId: normalizedIban,
+        ciSeries: normalizedCiSeries,
+        phoneNumber: normalizedPhoneNumber,
+        cityHours: normalizedCityHours,
+        status: normalizedStatus,
+        signatureName: normalizedSignatureName,
+      });
+
+      await connection.commit();
+
+      return res.status(200).json({
+        success: true,
+        message: "Datele contractului au fost actualizate.",
+      });
+    } catch (error) {
       await connection.rollback();
 
-      return res.status(404).json({
+      console.error("Update employee contract error:", error);
+
+      return res.status(500).json({
         success: false,
-        message: "Contractul angajatului nu a fost găsit.",
+        message: "Datele contractului nu au putut fi actualizate.",
       });
+    } finally {
+      connection.release();
     }
-
-    await connection.execute<ResultSetHeader>(
-      `
-        UPDATE employee_contracts
-        SET
-          first_name = ?,
-          last_name = ?,
-          age = ?,
-          game_id = ?,
-          ci_series = ?,
-          phone_number = ?,
-          city_hours = ?,
-          status = ?,
-          employee_signature_name = ?
-        WHERE user_id = ?
-      `,
-      [
-        normalizedFirstName,
-        normalizedLastName,
-        normalizedAge,
-        normalizedIban,
-        normalizedCiSeries,
-        normalizedPhoneNumber,
-        normalizedCityHours,
-        normalizedStatus,
-        normalizedSignatureName,
-        userId,
-      ],
-    );
-
-    await connection.commit();
-
-    return res.status(200).json({
-      success: true,
-      message: "Datele contractului au fost actualizate.",
-    });
-  } catch (error) {
-    await connection.rollback();
-
-    console.error("Update employee contract error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Datele contractului nu au putut fi actualizate.",
-    });
-  } finally {
-    connection.release();
-  }
-});
+  });
 
 /*
 |--------------------------------------------------------------------------
