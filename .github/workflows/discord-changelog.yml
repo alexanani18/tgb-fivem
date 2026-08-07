@@ -31,35 +31,55 @@ jobs:
           TZ: Europe/Bucharest
 
         run: |
+          set -e
+
           echo "🔎 Caut Pull Request-ul asociat commit-ului..."
 
           PR_JSON=$(gh api \
+            -H "Accept: application/vnd.github+json" \
             "/repos/$REPOSITORY/commits/$COMMIT_SHA/pulls")
 
           PR_NUMBER=$(echo "$PR_JSON" | jq -r '.[0].number // empty')
           PR_URL=$(echo "$PR_JSON" | jq -r '.[0].html_url // empty')
           SOURCE_BRANCH=$(echo "$PR_JSON" | jq -r '.[0].head.ref // empty')
           PR_AUTHOR=$(echo "$PR_JSON" | jq -r '.[0].user.login // empty')
+          PR_BODY=$(echo "$PR_JSON" | jq -r '.[0].body // empty')
 
           CHANGELOG_FILE=$(mktemp)
 
           if [ -n "$PR_NUMBER" ]; then
             echo "✅ Pull Request găsit: #$PR_NUMBER"
-            echo "📝 Caut primul comentariu..."
+            echo "📝 Caut primul comentariu din Conversation..."
 
-            gh api \
-              "/repos/$REPOSITORY/issues/$PR_NUMBER/comments?per_page=100" \
-              --jq '.[0].body // empty' \
-              > "$CHANGELOG_FILE"
+            COMMENTS=$(gh api \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/$REPOSITORY/issues/$PR_NUMBER/comments?per_page=100")
+
+            FIRST_COMMENT=$(echo "$COMMENTS" | jq -r '
+              map(select(.user.type != "Bot"))
+              | .[0].body // empty
+            ')
+
+            if [ -n "$FIRST_COMMENT" ]; then
+              echo "✅ Primul comentariu găsit."
+              printf '%s' "$FIRST_COMMENT" > "$CHANGELOG_FILE"
+
+            elif [ -n "$PR_BODY" ]; then
+              echo "⚠️ PR-ul nu are comentarii."
+              echo "📝 Folosesc descrierea Pull Request-ului."
+              printf '%s' "$PR_BODY" > "$CHANGELOG_FILE"
+
+            else
+              echo "⚠️ PR-ul nu are comentariu sau descriere."
+              echo "📝 Folosesc mesajul commit-ului."
+              printf '%s' "$COMMIT_MESSAGE" > "$CHANGELOG_FILE"
+            fi
+
           else
             echo "⚠️ Nu am găsit Pull Request asociat."
-          fi
+            echo "📝 Folosesc mesajul commit-ului."
 
-          if [ ! -s "$CHANGELOG_FILE" ]; then
-            echo "⚠️ PR-ul nu are comentarii. Folosesc mesajul commit-ului."
             printf '%s' "$COMMIT_MESSAGE" > "$CHANGELOG_FILE"
-          else
-            echo "✅ Changelog găsit în primul comentariu."
           fi
 
           if [ -z "$PR_URL" ]; then
@@ -80,24 +100,24 @@ jobs:
           export SOURCE_BRANCH
           export PR_AUTHOR
 
+          PAYLOAD_DIR=$(mktemp -d)
+          export PAYLOAD_DIR
+
           python3 <<'PYTHON'
           import json
           import os
-          import time
-          import urllib.request
-          import urllib.error
           from datetime import datetime
           from zoneinfo import ZoneInfo
 
-          webhook = os.environ["DISCORD_WEBHOOK"]
-          repository = os.environ["REPOSITORY"]
-
-          branch = os.environ.get("SOURCE_BRANCH") or os.environ.get("BRANCH", "main")
-          author = os.environ.get("PR_AUTHOR") or os.environ.get("AUTHOR", "Unknown")
-          pr_number = os.environ.get("PR_NUMBER", "")
-          pr_url = os.environ.get("PR_URL", "")
-
           changelog_file = os.environ["CHANGELOG_FILE"]
+          payload_dir = os.environ["PAYLOAD_DIR"]
+
+          repository = os.environ["REPOSITORY"]
+          branch = os.environ["SOURCE_BRANCH"]
+          author = os.environ["PR_AUTHOR"]
+
+          pr_number = os.environ.get("PR_NUMBER", "")
+          pr_url = os.environ["PR_URL"]
 
           with open(changelog_file, "r", encoding="utf-8") as file:
               changelog = file.read().strip()
@@ -105,25 +125,18 @@ jobs:
           if not changelog:
               changelog = "Nu a fost furnizat un changelog."
 
-          # -------------------------------------------------------------
-          # Discord limitează description-ul unui embed la 4096 caractere.
-          # Folosim o limită mai mică pentru siguranță.
-          # -------------------------------------------------------------
+          # Discord permite max 4096 caractere în description.
+          # Folosim 3800 pentru puțin spațiu de siguranță.
+          MAX_LENGTH = 3800
 
-          MAX_LENGTH = 3500
-
-          def split_changelog(text: str) -> list[str]:
-              paragraphs = text.split("\n")
+          def split_text(text):
+              lines = text.splitlines()
 
               chunks = []
               current = ""
 
-              for paragraph in paragraphs:
-                  candidate = (
-                      f"{current}\n{paragraph}"
-                      if current
-                      else paragraph
-                  )
+              for line in lines:
+                  candidate = f"{current}\n{line}".strip() if current else line
 
                   if len(candidate) <= MAX_LENGTH:
                       current = candidate
@@ -133,29 +146,28 @@ jobs:
                       chunks.append(current)
                       current = ""
 
-                  while len(paragraph) > MAX_LENGTH:
-                      chunks.append(paragraph[:MAX_LENGTH])
-                      paragraph = paragraph[MAX_LENGTH:]
+                  while len(line) > MAX_LENGTH:
+                      chunks.append(line[:MAX_LENGTH])
+                      line = line[MAX_LENGTH:]
 
-                  current = paragraph
+                  current = line
 
               if current:
                   chunks.append(current)
 
               return chunks or ["Nu a fost furnizat un changelog."]
 
-          chunks = split_changelog(changelog)
+          chunks = split_text(changelog)
 
           now = datetime.now(
               ZoneInfo("Europe/Bucharest")
           ).strftime("%d.%m.%Y %H:%M")
 
-          total_parts = len(chunks)
+          total = len(chunks)
 
-          for index, chunk in enumerate(chunks):
-              part_number = index + 1
+          for index, chunk in enumerate(chunks, start=1):
 
-              if index == 0:
+              if index == 1:
                   title = "🚀 TGB-FiveM — Release Changelog"
 
                   fields = [
@@ -196,17 +208,13 @@ jobs:
                   })
 
               else:
-                  title = (
-                      f"📋 Changelog — continuare "
-                      f"{part_number}/{total_parts}"
-                  )
-
+                  title = f"📋 Release Changelog — {index}/{total}"
                   fields = []
 
               embed = {
                   "title": title,
 
-                  # #B8904D - culoarea Blackfold
+                  # Blackfold Gold: #B8904D
                   "color": 12095565,
 
                   "description": chunk,
@@ -215,10 +223,10 @@ jobs:
 
                   "footer": {
                       "text": (
-                          f"TGB-FiveM • GitHub Changelog"
+                          "TGB-FiveM • Release Changelog"
                           + (
-                              f" • {part_number}/{total_parts}"
-                              if total_parts > 1
+                              f" • {index}/{total}"
+                              if total > 1
                               else ""
                           )
                       )
@@ -230,42 +238,43 @@ jobs:
                   "embeds": [embed]
               }
 
-              data = json.dumps(
-                  payload,
-                  ensure_ascii=False
-              ).encode("utf-8")
-
-              request = urllib.request.Request(
-                  webhook,
-                  data=data,
-                  headers={
-                      "Content-Type": "application/json"
-                  },
-                  method="POST"
+              file_path = os.path.join(
+                  payload_dir,
+                  f"{index:03d}.json"
               )
 
-              try:
-                  with urllib.request.urlopen(request) as response:
-                      print(
-                          f"✅ Discord message "
-                          f"{part_number}/{total_parts} trimis."
-                      )
-
-              except urllib.error.HTTPError as error:
-                  body = error.read().decode(
-                      "utf-8",
-                      errors="replace"
+              with open(
+                  file_path,
+                  "w",
+                  encoding="utf-8"
+              ) as file:
+                  json.dump(
+                      payload,
+                      file,
+                      ensure_ascii=False
                   )
 
-                  print(
-                      f"❌ Discord HTTP {error.code}: {body}"
-                  )
-
-                  raise
-
-              # Evităm rate-limit dacă avem un changelog foarte mare.
-              if part_number < total_parts:
-                  time.sleep(0.7)
-
-          print("🚀 Changelog Discord trimis cu succes.")
+          print(f"✅ Au fost generate {total} mesaj(e) Discord.")
           PYTHON
+
+          echo "📨 Trimit changelog-ul către Discord..."
+
+          for PAYLOAD_FILE in "$PAYLOAD_DIR"/*.json; do
+
+            curl --fail-with-body \
+              --retry 3 \
+              --retry-delay 1 \
+              -H "Content-Type: application/json" \
+              -H "User-Agent: TGB-FiveM-GitHub-Changelog/1.0" \
+              -X POST \
+              --data-binary "@$PAYLOAD_FILE" \
+              "$DISCORD_WEBHOOK"
+
+            echo ""
+            echo "✅ Mesaj Discord trimis."
+
+            sleep 1
+          done
+
+          echo ""
+          echo "🚀 Release changelog trimis cu succes."
