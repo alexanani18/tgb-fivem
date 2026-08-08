@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
+import sharp from "sharp";
 
 import {
   Router,
@@ -70,12 +72,8 @@ const storage = multer.diskStorage({
     callback(null, SUBMISSIONS_DIRECTORY);
   },
 
-  filename(_req, file, callback) {
-    const extension = path.extname(file.originalname);
-
-    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1_000_000)}${extension}`;
-
-    callback(null, uniqueName);
+  filename(_req, _file, callback) {
+    callback(null, randomUUID());
   },
 });
 
@@ -123,6 +121,23 @@ function parsePositiveInteger(value: unknown): number | null {
   return parsedValue;
 }
 
+function deleteUploadedFile(filePath?: string): void {
+  if (!filePath) {
+    return;
+  }
+
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  } catch (error) {
+    console.error(
+      "Failed to delete uploaded notification image:",
+      error,
+    );
+  }
+}
+
 /*
 |--------------------------------------------------------------------------
 | Middleware
@@ -158,12 +173,63 @@ router.post(
         });
       }
 
+      try {
+        const imageMetadata = await sharp(req.file.path).metadata();
+
+        if (
+          imageMetadata.format !== "jpeg" &&
+          imageMetadata.format !== "png" &&
+          imageMetadata.format !== "webp"
+        ) {
+          if (fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+          }
+
+          return res.status(400).json({
+            success: false,
+            message: "Fișierul încărcat nu este o imagine JPEG, PNG sau WEBP validă.",
+          });
+        }
+        const extensionByFormat: Record<string, string> = {
+          jpeg: ".jpg",
+          png: ".png",
+          webp: ".webp",
+        };
+
+        const detectedExtension = extensionByFormat[imageMetadata.format];
+
+        const finalFilePath = `${req.file.path}${detectedExtension}`;
+
+        fs.renameSync(req.file.path, finalFilePath);
+
+        req.file.path = finalFilePath;
+        req.file.filename = path.basename(finalFilePath);
+      } catch (error) {
+        console.error("Notification submission image validation error:", error);
+
+        try {
+          if (fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+          }
+        } catch (cleanupError) {
+          console.error(
+            "Failed to clean up invalid notification submission image:",
+            cleanupError,
+          );
+        }
+
+        return res.status(400).json({
+          success: false,
+          message: "Fișierul încărcat nu este o imagine validă.",
+        });
+      }
+
       const notificationImageId = parsePositiveInteger(
         req.body.notificationImageId,
       );
 
       if (!notificationImageId) {
-        fs.unlinkSync(req.file.path);
+        deleteUploadedFile(req.file.path);
 
         return res.status(400).json({
           success: false,
@@ -175,7 +241,7 @@ router.post(
         await notificationSubmissionsDatabase.notificationImageExists(notificationImageId);
 
       if (!notificationImage) {
-        fs.unlinkSync(req.file.path);
+        deleteUploadedFile(req.file.path);
 
         return res.status(404).json({
           success: false,
@@ -189,7 +255,7 @@ router.post(
       );
 
       if (!hasAccess) {
-        fs.unlinkSync(req.file.path);
+        deleteUploadedFile(req.file.path);
 
         return res.status(403).json({
           success: false,
@@ -251,11 +317,7 @@ router.post(
       console.error(error);
 
       if (req.file) {
-        try {
-          fs.unlinkSync(req.file.path);
-        } catch {
-          //
-        }
+        deleteUploadedFile(req.file.path);
       }
 
       return res.status(500).json({
