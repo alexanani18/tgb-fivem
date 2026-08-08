@@ -7,6 +7,7 @@ import {
   type Response,
 } from "express";
 
+import { PublicError } from "../services/publicError";
 import * as notificationsDatabase from "../database/notifications";
 import { requireAuth } from "../services/requireAuth";
 import { requireAdmin } from "../services/requireAdmin";
@@ -117,7 +118,7 @@ async function selectRandomNotificationImages(): Promise<string[]> {
     });
 
   if (imageFiles.length < NOTIFICATION_IMAGE_COUNT) {
-    throw new Error(
+    throw new PublicError(
       `Folderul public/notification-images trebuie să conțină minimum ${NOTIFICATION_IMAGE_COUNT} imagini valide.`,
     );
   }
@@ -332,14 +333,10 @@ router.post("/", requireAdmin, async (req: Request, res: Response) => {
   } catch (error) {
     console.error("❌ Failed to create notification:", error);
 
-    const errorMessage = error instanceof Error ? error.message : "";
-
-    if (
-      errorMessage.includes("public/notification-images trebuie să conțină")
-    ) {
+    if (error instanceof PublicError) {
       return res.status(400).json({
         success: false,
-        message: errorMessage,
+        message: error.message,
       });
     }
 
