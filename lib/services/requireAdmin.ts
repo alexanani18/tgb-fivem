@@ -1,19 +1,19 @@
 import type { NextFunction, Request, Response } from "express";
+import { requireAuth } from "./requireAuth";
 
-export function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  if (!req.session.user) {
-    return res.status(401).json({
-      success: false,
-      message: "Trebuie să fii autentificat.",
-    });
-  }
+export async function requireAdmin(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  await requireAuth(req, res, () => {
+    if (req.session.user?.role !== "ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Doar administratorii pot efectua această acțiune.",
+      });
+    }
 
-  if (req.session.user.role !== "ADMIN") {
-    return res.status(403).json({
-      success: false,
-      message: "Doar administratorii pot efectua această acțiune.",
-    });
-  }
-
-  next();
+    next();
+  });
 }

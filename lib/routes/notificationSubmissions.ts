@@ -3,7 +3,6 @@ import path from "node:path";
 
 import {
   Router,
-  type NextFunction,
   type Request,
   type Response,
 } from "express";
@@ -13,6 +12,8 @@ import multer from "multer";
 import { db } from "../db";
 
 import * as notificationSubmissionsDatabase from "../database/notificationImageSubmissions";
+import { requireAuth } from "../services/requireAuth";
+import { requireAdmin } from "../services/requireAdmin";
 
 const router = Router();
 
@@ -39,38 +40,6 @@ function getSessionUser(req: Request): SessionUser | undefined {
   return req.session.user as SessionUser | undefined;
 }
 
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const sessionUser = getSessionUser(req);
-
-  if (!sessionUser) {
-    return res.status(401).json({
-      success: false,
-      message: "Trebuie să fii autentificat.",
-    });
-  }
-
-  next();
-}
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const sessionUser = getSessionUser(req);
-
-  if (!sessionUser) {
-    return res.status(401).json({
-      success: false,
-      message: "Trebuie să fii autentificat.",
-    });
-  }
-
-  if (sessionUser.role !== "ADMIN") {
-    return res.status(403).json({
-      success: false,
-      message: "Doar administratorul poate efectua această acțiune.",
-    });
-  }
-
-  next();
-}
 
 /*
 |--------------------------------------------------------------------------
