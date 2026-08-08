@@ -113,6 +113,16 @@ interface OverlappingLeaveRow extends RowDataPacket {
   id: number;
 }
 
+export interface DeleteLeaveResult {
+  workflowRequestId: number;
+  userId: number;
+}
+
+interface DeleteLeaveRow extends RowDataPacket {
+  workflow_request_id: number;
+  user_id: number;
+}
+
 function mapLeave(row: LeaveRow): LeaveRequest {
   return {
     id: Number(row.id),
@@ -751,6 +761,84 @@ export async function rejectLeaveRequest(
     return {
       workflow: updatedWorkflow,
       leave: updatedLeave,
+    };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+export async function deleteLeaveRequest(
+  workflowRequestId: number,
+): Promise<DeleteLeaveResult> {
+  const connection = await db.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    const [rows] = await connection.execute<DeleteLeaveRow[]>(
+      `
+        SELECT
+          wr.id AS workflow_request_id,
+          wr.user_id
+        FROM workflow_requests wr
+
+        INNER JOIN workflow_types wt
+          ON wt.id = wr.workflow_type_id
+
+        INNER JOIN leave_requests lr
+          ON lr.workflow_request_id = wr.id
+
+        WHERE wr.id = ?
+          AND wt.code = 'LEAVE'
+
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [workflowRequestId],
+    );
+
+    const leave = rows[0];
+
+    if (!leave) {
+      throw new Error("Cererea de concediu nu a fost găsită.");
+    }
+
+    await connection.execute<ResultSetHeader>(
+      `
+        DELETE FROM workflow_request_history
+        WHERE workflow_request_id = ?
+      `,
+      [workflowRequestId],
+    );
+
+    await connection.execute<ResultSetHeader>(
+      `
+        DELETE FROM leave_requests
+        WHERE workflow_request_id = ?
+      `,
+      [workflowRequestId],
+    );
+
+    const [workflowDeleteResult] = await connection.execute<ResultSetHeader>(
+      `
+          DELETE FROM workflow_requests
+          WHERE id = ?
+        `,
+      [workflowRequestId],
+    );
+
+    if (workflowDeleteResult.affectedRows !== 1) {
+      throw new Error("Cererea de concediu nu a putut fi ștearsă.");
+    }
+
+    await connection.commit();
+
+    return {
+      workflowRequestId: Number(leave.workflow_request_id),
+      userId: Number(leave.user_id),
     };
   } catch (error) {
     await connection.rollback();

@@ -3,6 +3,7 @@ import { Router } from "express";
 import {
   approveLeaveRequest,
   createLeaveRequest,
+  deleteLeaveRequest,
   getAllLeaveRequests,
   getLeaveByWorkflowId,
   getLeaveRequestsForUser,
@@ -11,6 +12,7 @@ import {
 
 import { requireAdmin } from "../services/requireAdmin";
 import { requireAuth } from "../services/requireAuth";
+import { runLeaveStatusSync } from "../services/leaveStatusSync";
 
 const router = Router();
 
@@ -207,6 +209,16 @@ router.post("/:id/approve", requireAdmin, async (req, res) => {
 
     const leave = await approveLeaveRequest(workflowRequestId, adminId);
 
+    /*
+     * Dacă perioada concediului include ziua curentă,
+     * angajatul trebuie trecut imediat în CONCEDIU.
+     *
+     * Dacă concediul începe în viitor, sync-ul nu
+     * modifică nimic acum și îl va activa la 00:00
+     * în ziua potrivită.
+     */
+    await runLeaveStatusSync();
+
     return res.json({
       success: true,
       message: "Cererea de concediu a fost aprobată.",
@@ -281,6 +293,54 @@ router.post("/:id/reject", requireAdmin, async (req, res) => {
         error instanceof Error
           ? error.message
           : "Cererea de concediu nu a putut fi respinsă.",
+    });
+  }
+});
+
+/*
+|--------------------------------------------------------------------------
+| Admin - Delete leave request
+|--------------------------------------------------------------------------
+*/
+
+router.delete("/:id", requireAdmin, async (req, res) => {
+  try {
+    const workflowRequestId = Number(req.params.id);
+
+    if (!Number.isInteger(workflowRequestId) || workflowRequestId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "ID-ul cererii este invalid.",
+      });
+    }
+
+    const deletedLeave = await deleteLeaveRequest(workflowRequestId);
+
+    /*
+     * Recalculăm imediat statusurile.
+     *
+     * Dacă tocmai am șters concediul activ al userului
+     * și nu mai există alt concediu APPROVED activ:
+     *
+     * CONCEDIU -> ACTIV
+     * observations -> NULL
+     */
+    await runLeaveStatusSync();
+
+    return res.json({
+      success: true,
+      message: "Cererea de concediu a fost ștearsă.",
+      data: deletedLeave,
+    });
+  } catch (error) {
+    console.error("Failed to delete leave request:", error);
+
+    return res.status(400).json({
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Cererea de concediu nu a putut fi ștearsă.",
     });
   }
 });
