@@ -20,9 +20,11 @@ import {
   syncWorkflowDiscordMessageSafe,
 } from "../discord/workflowMessages";
 
+import { PublicError } from "../services/publicError";
 import { requireAdmin } from "../services/requireAdmin";
 import { requireAuth } from "../services/requireAuth";
 import { runLeaveStatusSync } from "../services/leaveStatusSync";
+
 
 const router = Router();
 
@@ -87,12 +89,16 @@ router.post("/", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("Failed to create leave request:", error);
 
-    return res.status(400).json({
+    if (error instanceof PublicError) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Cererea de concediu nu a putut fi creată.",
+      message: "Cererea de concediu nu a putut fi creată.",
     });
   }
 });
@@ -253,12 +259,16 @@ router.post("/:id/approve", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("Failed to approve leave request:", error);
 
-    return res.status(400).json({
+    if (error instanceof PublicError) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Cererea de concediu nu a putut fi aprobată.",
+      message: "Cererea de concediu nu a putut fi aprobată.",
     });
   }
 });
@@ -315,12 +325,16 @@ router.post("/:id/reject", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("Failed to reject leave request:", error);
 
-    return res.status(400).json({
+    if (error instanceof PublicError) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Cererea de concediu nu a putut fi respinsă.",
+      message: "Cererea de concediu nu a putut fi respinsă.",
     });
   }
 });
@@ -368,12 +382,16 @@ router.delete("/me/:id", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("Failed to delete own leave request:", error);
 
-    return res.status(400).json({
+    if (error instanceof PublicError) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Cererea de concediu nu a putut fi ștearsă.",
+      message: "Cererea de concediu nu a putut fi ștearsă.",
     });
   }
 });
@@ -422,12 +440,16 @@ router.delete("/:id", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("Failed to delete leave request:", error);
 
-    return res.status(400).json({
+    if (error instanceof PublicError) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Cererea de concediu nu a putut fi ștearsă.",
+      message: "Cererea de concediu nu a putut fi ștearsă.",
     });
   }
 });

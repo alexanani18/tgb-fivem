@@ -1,5 +1,6 @@
 import { Router } from "express";
 
+import { PublicError } from "../services/publicError";
 import { requireAuth } from "../services/requireAuth";
 import { requireAdmin } from "../services/requireAdmin";
 import { syncWorkflowDiscordMessageSafe } from "../discord/workflowMessages";
@@ -70,12 +71,16 @@ router.post("/", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("Failed to create resignation request:", error);
 
-    return res.status(400).json({
+    if (error instanceof PublicError) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Failed to create resignation request.",
+      message: "Failed to create resignation request.",
     });
   }
 });
@@ -154,9 +159,9 @@ router.get("/:id", requireAuth, async (req, res) => {
       viewer.role === "ADMIN"
         ? await getResignationByWorkflowIdForAdmin(workflowRequestId)
         : await getResignationByWorkflowIdForUser(
-            workflowRequestId,
-            viewer.id,
-          );
+          workflowRequestId,
+          viewer.id,
+        );
 
     if (!resignation) {
       return res.status(404).json({
@@ -219,12 +224,16 @@ router.post("/:id/approve", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("Failed to approve resignation request:", error);
 
-    return res.status(400).json({
+    if (error instanceof PublicError) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Failed to approve resignation request.",
+      message: "Failed to approve resignation request.",
     });
   }
 });
@@ -281,12 +290,16 @@ router.post("/:id/reject", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("Failed to reject resignation request:", error);
 
-    return res.status(400).json({
+    if (error instanceof PublicError) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Failed to reject resignation request.",
+      message: "Failed to reject resignation request.",
     });
   }
 });
@@ -331,12 +344,16 @@ router.post("/:id/uniform-return", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("Failed to confirm uniform return:", error);
 
-    return res.status(400).json({
+    if (error instanceof PublicError) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Failed to confirm uniform return.",
+      message: "Failed to confirm uniform return.",
     });
   }
 });
@@ -381,12 +398,16 @@ router.post("/:id/complete", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("Failed to complete resignation:", error);
 
-    return res.status(400).json({
+    if (error instanceof PublicError) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Failed to complete resignation.",
+      message: "Failed to complete resignation.",
     });
   }
 });

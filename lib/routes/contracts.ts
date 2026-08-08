@@ -840,14 +840,9 @@ router.post("/admin/:contractId/generate", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("Generate contract error:", error);
 
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Contractul nu a putut fi generat.";
-
     return res.status(500).json({
       success: false,
-      message,
+      message: "Contractul nu a putut fi generat.",
     });
   }
 });
