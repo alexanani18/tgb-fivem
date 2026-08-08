@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 
 import AppShell from "../../../components/AppShell";
+import LeaveRequestAdmin from "./LeaveRequestAdmin";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL!;
 
@@ -527,6 +528,14 @@ export default function AdminRequestDetailsPage() {
               </div>
             ) : !workflow ? (
               <EmptyRequest />
+            ) : workflow.workflowTypeCode === "LEAVE" ? (
+              <LeaveRequestAdmin
+                workflow={workflow}
+                onWorkflowUpdated={async () => {
+                  dispatchWorkflowUpdated();
+                  await loadRequest(true);
+                }}
+              />
             ) : workflow.workflowTypeCode !== "RESIGNATION" ? (
               <UnsupportedWorkflow workflow={workflow} />
             ) : !resignation ? (

@@ -590,6 +590,94 @@ export async function createLeaveRequest(
   }
 }
 
+export async function deleteOwnPendingLeaveRequest(
+  workflowRequestId: number,
+  userId: number,
+): Promise<DeleteLeaveResult> {
+  const connection = await db.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    const [rows] = await connection.execute<
+      (DeleteLeaveRow & { status_code: string })[]
+    >(
+      `
+        SELECT
+          wr.id AS workflow_request_id,
+          wr.user_id,
+          ws.code AS status_code
+        FROM workflow_requests wr
+
+        INNER JOIN workflow_types wt
+          ON wt.id = wr.workflow_type_id
+
+        INNER JOIN workflow_statuses ws
+          ON ws.id = wr.status_id
+
+        INNER JOIN leave_requests lr
+          ON lr.workflow_request_id = wr.id
+
+        WHERE wr.id = ?
+          AND wr.user_id = ?
+          AND wt.code = 'LEAVE'
+
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [workflowRequestId, userId],
+    );
+
+    const leave = rows[0];
+
+    if (!leave) {
+      throw new Error("Cererea de concediu nu a fost găsită.");
+    }
+
+    if (leave.status_code !== "PENDING") {
+      throw new Error(
+        "Poți șterge doar cererile de concediu aflate în așteptare.",
+      );
+    }
+
+    await connection.execute<ResultSetHeader>(
+      `
+        DELETE FROM workflow_request_history
+        WHERE workflow_request_id = ?
+      `,
+      [workflowRequestId],
+    );
+
+    await connection.execute<ResultSetHeader>(
+      `
+        DELETE FROM leave_requests
+        WHERE workflow_request_id = ?
+      `,
+      [workflowRequestId],
+    );
+
+    await connection.execute<ResultSetHeader>(
+      `
+        DELETE FROM workflow_requests
+        WHERE id = ?
+      `,
+      [workflowRequestId],
+    );
+
+    await connection.commit();
+
+    return {
+      workflowRequestId: Number(leave.workflow_request_id),
+      userId: Number(leave.user_id),
+    };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
 export async function approveLeaveRequest(
   workflowRequestId: number,
   adminId: number,

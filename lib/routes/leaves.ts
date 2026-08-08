@@ -8,6 +8,7 @@ import {
   getLeaveByWorkflowId,
   getLeaveRequestsForUser,
   rejectLeaveRequest,
+  deleteOwnPendingLeaveRequest,
 } from "../database/leaves";
 
 import { requireAdmin } from "../services/requireAdmin";
@@ -293,6 +294,54 @@ router.post("/:id/reject", requireAdmin, async (req, res) => {
         error instanceof Error
           ? error.message
           : "Cererea de concediu nu a putut fi respinsă.",
+    });
+  }
+});
+
+/*
+|--------------------------------------------------------------------------
+| Angajat - Delete leave request
+|--------------------------------------------------------------------------
+*/
+
+router.delete("/me/:id", requireAuth, async (req, res) => {
+  try {
+    const workflowRequestId = Number(req.params.id);
+    const userId = req.session.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized.",
+      });
+    }
+
+    if (!Number.isInteger(workflowRequestId) || workflowRequestId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "ID-ul cererii este invalid.",
+      });
+    }
+
+    const deletedLeave = await deleteOwnPendingLeaveRequest(
+      workflowRequestId,
+      userId,
+    );
+
+    return res.json({
+      success: true,
+      message: "Cererea de concediu a fost ștearsă.",
+      data: deletedLeave,
+    });
+  } catch (error) {
+    console.error("Failed to delete own leave request:", error);
+
+    return res.status(400).json({
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Cererea de concediu nu a putut fi ștearsă.",
     });
   }
 });
