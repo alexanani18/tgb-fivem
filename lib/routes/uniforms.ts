@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import multer from "multer";
+import sharp from "sharp";
 import { Router } from "express";
 
 import {
@@ -38,24 +39,9 @@ const uniformImageStorage = multer.diskStorage({
   },
 
   filename: (req, file, callback) => {
-    const extension = path.extname(file.originalname).toLowerCase();
-
+    const extension = file.mimetype === "image/png" ? ".png" : ".jpg";
     const uniformId = req.params.id;
     const timestamp = Date.now();
-
-    const directory = path.join(
-      process.cwd(),
-      "public",
-      "uniforms",
-    );
-
-    const files = fs.readdirSync(directory);
-
-    for (const fileName of files) {
-      if (fileName.startsWith(`uniform-${uniformId}-`)) {
-        fs.unlinkSync(path.join(directory, fileName));
-      }
-    }
 
     callback(
       null,
@@ -269,9 +255,51 @@ router.patch(
         });
       }
 
+      try {
+        const imageMetadata = await sharp(req.file.path).metadata();
+
+        if (
+          imageMetadata.format !== "jpeg" &&
+          imageMetadata.format !== "png"
+        ) {
+          if (fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+          }
+
+          return res.status(400).json({
+            success: false,
+            message: "Fișierul încărcat nu este un JPEG sau PNG valid.",
+          });
+        }
+      } catch (error) {
+        console.error("Uniform image validation error:", error);
+
+        if (fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+        }
+
+        return res.status(400).json({
+          success: false,
+          message: "Fișierul încărcat nu este o imagine validă.",
+        });
+      }
+
       const uniform = await getUniformById(uniformId);
 
       if (!uniform) {
+        if (req.file?.path) {
+          try {
+            if (fs.existsSync(req.file.path)) {
+              fs.unlinkSync(req.file.path);
+            }
+          } catch (cleanupError) {
+            console.error(
+              "❌ Failed to clean up uploaded uniform image:",
+              cleanupError,
+            );
+          }
+        }
+
         return res.status(404).json({
           success: false,
           message: "Uniforma nu există.",
@@ -285,12 +313,47 @@ router.patch(
         updatedBy: sessionUser.id,
       });
 
+      if (uniform.image_path) {
+        const oldImagePath = path.join(
+          process.cwd(),
+          "public",
+          uniform.image_path,
+        );
+
+        if (
+          fs.existsSync(oldImagePath) &&
+          oldImagePath !== req.file.path
+        ) {
+          try {
+            fs.unlinkSync(oldImagePath);
+          } catch (cleanupError) {
+            console.error(
+              "❌ Failed to delete previous uniform image:",
+              cleanupError,
+            );
+          }
+        }
+      }
+
       return res.status(200).json({
         success: true,
         message: "Imaginea uniformei a fost actualizată.",
         uniform: updatedUniform,
       });
     } catch (error) {
+      if (req.file?.path) {
+        try {
+          if (fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+          }
+        } catch (cleanupError) {
+          console.error(
+            "❌ Failed to clean up uploaded uniform image:",
+            cleanupError,
+          );
+        }
+      }
+
       console.error("❌ Failed to upload uniform image:", error);
 
       return res.status(500).json({
