@@ -5,6 +5,7 @@ import type {
 } from "mysql2/promise";
 
 import { db } from "../db";
+import { PublicError } from "../services/publicError";
 
 import {
   createWorkflowHistory,
@@ -630,7 +631,7 @@ export async function createInactivityRequest(
     const workflowType = await getWorkflowTypeByCode("INACTIVITY");
 
     if (!workflowType) {
-      throw new Error("INACTIVITY workflow type is not configured.");
+      throw new PublicError("INACTIVITY workflow type is not configured.");
     }
 
     const pendingStatus = await getWorkflowStatusByCodeWithConnection(
@@ -639,7 +640,7 @@ export async function createInactivityRequest(
     );
 
     if (!pendingStatus) {
-      throw new Error("PENDING workflow status is not configured.");
+      throw new PublicError("PENDING workflow status is not configured.");
     }
 
     const employee = await getEmployeeStateWithConnection(
@@ -648,47 +649,47 @@ export async function createInactivityRequest(
     );
 
     if (!employee) {
-      throw new Error("Employee details were not found.");
+      throw new PublicError("Employee details were not found.");
     }
 
     if (!employee.is_active) {
-      throw new Error("Inactive users cannot create inactivity requests.");
+      throw new PublicError("Inactive users cannot create inactivity requests.");
     }
 
     if (employee.employee_status === "DEMISIONAT") {
-      throw new Error("Resigned employees cannot create inactivity requests.");
+      throw new PublicError("Resigned employees cannot create inactivity requests.");
     }
 
     const activity = input.activity.trim();
     const reason = input.reason.trim();
 
     if (!activity) {
-      throw new Error("Activity is required.");
+      throw new PublicError("Activity is required.");
     }
 
     if (activity.length > 150) {
-      throw new Error("Activity cannot exceed 150 characters.");
+      throw new PublicError("Activity cannot exceed 150 characters.");
     }
 
     if (!reason) {
-      throw new Error("Inactivity reason is required.");
+      throw new PublicError("Inactivity reason is required.");
     }
 
     if (reason.length > 1000) {
-      throw new Error("Inactivity reason cannot exceed 1000 characters.");
+      throw new PublicError("Inactivity reason cannot exceed 1000 characters.");
     }
 
     const activityDate = new Date(`${input.activityDate}T00:00:00`);
 
     if (Number.isNaN(activityDate.getTime())) {
-      throw new Error("Invalid activity date.");
+      throw new PublicError("Invalid activity date.");
     }
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     if (activityDate < today) {
-      throw new Error("Activity date cannot be in the past.");
+      throw new PublicError("Activity date cannot be in the past.");
     }
 
     const hasDuplicate = await hasDuplicateInactivityWithConnection(
@@ -699,7 +700,7 @@ export async function createInactivityRequest(
     );
 
     if (hasDuplicate) {
-      throw new Error(
+      throw new PublicError(
         "You already have a pending or approved inactivity request for this activity on this date.",
       );
     }
@@ -798,11 +799,11 @@ export async function deleteOwnPendingInactivityRequest(
     const inactivity = rows[0];
 
     if (!inactivity) {
-      throw new Error("Cererea de inactivitate nu a fost găsită.");
+      throw new PublicError("Cererea de inactivitate nu a fost găsită.");
     }
 
     if (inactivity.status_code !== "PENDING") {
-      throw new Error(
+      throw new PublicError(
         "Poți șterge doar cererile de inactivitate aflate în așteptare.",
       );
     }
@@ -860,7 +861,7 @@ export async function approveInactivityRequest(
     );
 
     if (!workflow) {
-      throw new Error("Workflow request was not found.");
+      throw new PublicError("Workflow request was not found.");
     }
 
     const inactivity = await getInactivityByWorkflowIdWithConnection(
@@ -869,7 +870,7 @@ export async function approveInactivityRequest(
     );
 
     if (!inactivity) {
-      throw new Error("Inactivity request was not found.");
+      throw new PublicError("Inactivity request was not found.");
     }
 
     const pendingStatus = await getWorkflowStatusByCodeWithConnection(
@@ -883,11 +884,11 @@ export async function approveInactivityRequest(
     );
 
     if (!pendingStatus || !approvedStatus) {
-      throw new Error("Workflow statuses are not configured.");
+      throw new PublicError("Workflow statuses are not configured.");
     }
 
     if (workflow.statusId !== pendingStatus.id) {
-      throw new Error("Only pending inactivity requests can be approved.");
+      throw new PublicError("Only pending inactivity requests can be approved.");
     }
 
     await updateWorkflowReview(connection, {
@@ -961,7 +962,7 @@ export async function rejectInactivityRequest(
     );
 
     if (!workflow) {
-      throw new Error("Workflow request was not found.");
+      throw new PublicError("Workflow request was not found.");
     }
 
     const inactivity = await getInactivityByWorkflowIdWithConnection(
@@ -970,17 +971,17 @@ export async function rejectInactivityRequest(
     );
 
     if (!inactivity) {
-      throw new Error("Inactivity request was not found.");
+      throw new PublicError("Inactivity request was not found.");
     }
 
     const rejectionReason = input.rejectionReason.trim();
 
     if (!rejectionReason) {
-      throw new Error("Rejection reason is required.");
+      throw new PublicError("Rejection reason is required.");
     }
 
     if (rejectionReason.length > 1000) {
-      throw new Error("Rejection reason cannot exceed 1000 characters.");
+      throw new PublicError("Rejection reason cannot exceed 1000 characters.");
     }
 
     const pendingStatus = await getWorkflowStatusByCodeWithConnection(
@@ -994,11 +995,11 @@ export async function rejectInactivityRequest(
     );
 
     if (!pendingStatus || !rejectedStatus) {
-      throw new Error("Workflow statuses are not configured.");
+      throw new PublicError("Workflow statuses are not configured.");
     }
 
     if (workflow.statusId !== pendingStatus.id) {
-      throw new Error("Only pending inactivity requests can be rejected.");
+      throw new PublicError("Only pending inactivity requests can be rejected.");
     }
 
     await updateWorkflowReview(connection, {
@@ -1086,7 +1087,7 @@ export async function deleteInactivityRequest(
     const request = rows[0];
 
     if (!request) {
-      throw new Error("Cererea de inactivitate nu a fost găsită.");
+      throw new PublicError("Cererea de inactivitate nu a fost găsită.");
     }
 
     const inactivity = await getInactivityByWorkflowIdWithConnection(
@@ -1095,7 +1096,7 @@ export async function deleteInactivityRequest(
     );
 
     if (!inactivity) {
-      throw new Error("Datele cererii de inactivitate nu au fost găsite.");
+      throw new PublicError("Datele cererii de inactivitate nu au fost găsite.");
     }
 
     /*
@@ -1138,7 +1139,7 @@ export async function deleteInactivityRequest(
     );
 
     if (workflowDeleteResult.affectedRows !== 1) {
-      throw new Error("Cererea de inactivitate nu a putut fi ștearsă.");
+      throw new PublicError("Cererea de inactivitate nu a putut fi ștearsă.");
     }
 
     await connection.commit();

@@ -20,6 +20,8 @@ import {
   syncWorkflowDiscordMessageSafe,
 } from "../discord/workflowMessages";
 
+import { PublicError } from "../services/publicError";
+
 import { requireAdmin } from "../services/requireAdmin";
 import { requireAuth } from "../services/requireAuth";
 
@@ -86,12 +88,16 @@ router.post("/", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("Failed to create inactivity request:", error);
 
-    return res.status(400).json({
+    if (error instanceof PublicError) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Cererea de inactivitate nu a putut fi creată.",
+      message: "Cererea de inactivitate nu a putut fi creată.",
     });
   }
 });
@@ -182,9 +188,9 @@ router.get("/:id", requireAuth, async (req, res) => {
       viewer.role === "ADMIN"
         ? await getInactivityByWorkflowIdForAdmin(workflowRequestId)
         : await getInactivityByWorkflowIdForUser(
-            workflowRequestId,
-            viewer.id,
-          );
+          workflowRequestId,
+          viewer.id,
+        );
 
     if (!inactivity) {
       return res.status(404).json({
@@ -247,12 +253,16 @@ router.post("/:id/approve", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("Failed to approve inactivity request:", error);
 
-    return res.status(400).json({
+    if (error instanceof PublicError) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Cererea de inactivitate nu a putut fi aprobată.",
+      message: "Cererea de inactivitate nu a putut fi aprobată.",
     });
   }
 });
@@ -309,12 +319,16 @@ router.post("/:id/reject", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("Failed to reject inactivity request:", error);
 
-    return res.status(400).json({
+    if (error instanceof PublicError) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Cererea de inactivitate nu a putut fi respinsă.",
+      message: "Cererea de inactivitate nu a putut fi respinsă.",
     });
   }
 });
@@ -362,12 +376,16 @@ router.delete("/me/:id", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("Failed to delete own inactivity request:", error);
 
-    return res.status(400).json({
+    if (error instanceof PublicError) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Cererea de inactivitate nu a putut fi ștearsă.",
+      message: "Cererea de inactivitate nu a putut fi ștearsă.",
     });
   }
 });
@@ -414,12 +432,16 @@ router.delete("/:id", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("Failed to delete inactivity request:", error);
 
-    return res.status(400).json({
+    if (error instanceof PublicError) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Cererea de inactivitate nu a putut fi ștearsă.",
+      message: "Cererea de inactivitate nu a putut fi ștearsă.",
     });
   }
 });
