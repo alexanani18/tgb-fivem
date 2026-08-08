@@ -2,6 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import * as authDatabase from "../database/auth";
 import { requireAuth } from "../services/requireAuth";
+import rateLimit from "express-rate-limit";
 
 const router = Router();
 
@@ -13,7 +14,18 @@ router.get("/test", (_req, res) => {
   });
 });
 
-router.post("/login", async (req, res) => {
+const loginRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many login attempts. Please try again later.",
+  },
+});
+
+router.post("/login", loginRateLimit, async (req, res) => {
   try {
     const { username, password } = req.body;
 
@@ -101,7 +113,18 @@ router.post("/logout", (req, res) => {
   });
 });
 
-router.patch("/schimbare-parola", async (req, res) => {
+const passwordChangeRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many password change attempts. Please try again later.",
+  },
+});
+
+router.patch("/schimbare-parola", passwordChangeRateLimit, async (req, res) => {
   try {
     const sessionUser = req.session.user;
 
