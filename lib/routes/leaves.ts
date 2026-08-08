@@ -1,11 +1,5 @@
 import { Router } from "express";
 
-import { requireAuth } from "../services/requireAuth";
-import { requireAdmin } from "../services/requireAdmin";
-import { runLeaveStatusSync } from "../services/leaveStatusSync";
-
-import { syncWorkflowDiscordMessageSafe } from "../discord/workflowMessages";
-
 import {
   approveLeaveRequest,
   createLeaveRequest,
@@ -14,6 +8,9 @@ import {
   getLeaveRequestsForUser,
   rejectLeaveRequest,
 } from "../database/leaves";
+
+import { requireAdmin } from "../services/requireAdmin";
+import { requireAuth } from "../services/requireAuth";
 
 const router = Router();
 
@@ -43,21 +40,21 @@ router.post("/", requireAuth, async (req, res) => {
     if (!startDate || typeof startDate !== "string") {
       return res.status(400).json({
         success: false,
-        message: "Leave start date is required.",
+        message: "Data de început este obligatorie.",
       });
     }
 
     if (!endDate || typeof endDate !== "string") {
       return res.status(400).json({
         success: false,
-        message: "Leave end date is required.",
+        message: "Data de sfârșit este obligatorie.",
       });
     }
 
     if (!reason || typeof reason !== "string") {
       return res.status(400).json({
         success: false,
-        message: "Leave reason is required.",
+        message: "Motivul este obligatoriu.",
       });
     }
 
@@ -68,11 +65,9 @@ router.post("/", requireAuth, async (req, res) => {
       reason,
     });
 
-    void syncWorkflowDiscordMessageSafe(leave.workflow.id);
-
     return res.status(201).json({
       success: true,
-      message: "Leave request created successfully.",
+      message: "Cererea de concediu a fost trimisă.",
       data: leave,
     });
   } catch (error) {
@@ -83,7 +78,7 @@ router.post("/", requireAuth, async (req, res) => {
       message:
         error instanceof Error
           ? error.message
-          : "Failed to create leave request.",
+          : "Cererea de concediu nu a putut fi creată.",
     });
   }
 });
@@ -112,11 +107,11 @@ router.get("/me", requireAuth, async (req, res) => {
       data: leaves,
     });
   } catch (error) {
-    console.error("Failed to load leave requests for user:", error);
+    console.error("Failed to load user leave requests:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Failed to load leave requests.",
+      message: "Cererile de concediu nu au putut fi încărcate.",
     });
   }
 });
@@ -136,11 +131,11 @@ router.get("/admin", requireAdmin, async (_req, res) => {
       data: leaves,
     });
   } catch (error) {
-    console.error("Failed to load leave requests for admin:", error);
+    console.error("Failed to load admin leave requests:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Failed to load leave requests.",
+      message: "Cererile de concediu nu au putut fi încărcate.",
     });
   }
 });
@@ -158,7 +153,7 @@ router.get("/:id", requireAuth, async (req, res) => {
     if (!Number.isInteger(workflowRequestId) || workflowRequestId <= 0) {
       return res.status(400).json({
         success: false,
-        message: "Invalid leave request ID.",
+        message: "ID-ul cererii este invalid.",
       });
     }
 
@@ -167,7 +162,7 @@ router.get("/:id", requireAuth, async (req, res) => {
     if (!leave) {
       return res.status(404).json({
         success: false,
-        message: "Leave request not found.",
+        message: "Cererea de concediu nu a fost găsită.",
       });
     }
 
@@ -180,14 +175,14 @@ router.get("/:id", requireAuth, async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Failed to load leave request.",
+      message: "Cererea de concediu nu a putut fi încărcată.",
     });
   }
 });
 
 /*
 |--------------------------------------------------------------------------
-| Admin - Approve leave
+| Admin - Approve leave request
 |--------------------------------------------------------------------------
 */
 
@@ -206,19 +201,15 @@ router.post("/:id/approve", requireAdmin, async (req, res) => {
     if (!Number.isInteger(workflowRequestId) || workflowRequestId <= 0) {
       return res.status(400).json({
         success: false,
-        message: "Invalid leave request ID.",
+        message: "ID-ul cererii este invalid.",
       });
     }
 
     const leave = await approveLeaveRequest(workflowRequestId, adminId);
 
-    await runLeaveStatusSync();
-
-    void syncWorkflowDiscordMessageSafe(workflowRequestId);
-
     return res.json({
       success: true,
-      message: "Leave request approved successfully.",
+      message: "Cererea de concediu a fost aprobată.",
       data: leave,
     });
   } catch (error) {
@@ -229,14 +220,14 @@ router.post("/:id/approve", requireAdmin, async (req, res) => {
       message:
         error instanceof Error
           ? error.message
-          : "Failed to approve leave request.",
+          : "Cererea de concediu nu a putut fi aprobată.",
     });
   }
 });
 
 /*
 |--------------------------------------------------------------------------
-| Admin - Reject leave
+| Admin - Reject leave request
 |--------------------------------------------------------------------------
 */
 
@@ -255,7 +246,7 @@ router.post("/:id/reject", requireAdmin, async (req, res) => {
     if (!Number.isInteger(workflowRequestId) || workflowRequestId <= 0) {
       return res.status(400).json({
         success: false,
-        message: "Invalid leave request ID.",
+        message: "ID-ul cererii este invalid.",
       });
     }
 
@@ -266,7 +257,7 @@ router.post("/:id/reject", requireAdmin, async (req, res) => {
     if (!rejectionReason || typeof rejectionReason !== "string") {
       return res.status(400).json({
         success: false,
-        message: "Rejection reason is required.",
+        message: "Motivul respingerii este obligatoriu.",
       });
     }
 
@@ -276,11 +267,9 @@ router.post("/:id/reject", requireAdmin, async (req, res) => {
       rejectionReason,
     });
 
-    void syncWorkflowDiscordMessageSafe(workflowRequestId);
-
     return res.json({
       success: true,
-      message: "Leave request rejected successfully.",
+      message: "Cererea de concediu a fost respinsă.",
       data: leave,
     });
   } catch (error) {
@@ -291,7 +280,7 @@ router.post("/:id/reject", requireAdmin, async (req, res) => {
       message:
         error instanceof Error
           ? error.message
-          : "Failed to reject leave request.",
+          : "Cererea de concediu nu a putut fi respinsă.",
     });
   }
 });

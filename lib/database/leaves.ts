@@ -152,10 +152,6 @@ function mapLeaveListItem(row: LeaveListRow): LeaveListItem {
   };
 }
 
-function parseDate(value: string): Date {
-  return new Date(`${value}T00:00:00`);
-}
-
 async function getEmployeeStateWithConnection(
   connection: PoolConnection,
   userId: number,
@@ -496,8 +492,8 @@ export async function createLeaveRequest(
       throw new Error("Leave reason cannot exceed 1000 characters.");
     }
 
-    const startDate = parseDate(input.startDate);
-    const endDate = parseDate(input.endDate);
+    const startDate = new Date(`${input.startDate}T00:00:00`);
+    const endDate = new Date(`${input.endDate}T00:00:00`);
 
     if (Number.isNaN(startDate.getTime())) {
       throw new Error("Invalid leave start date.");
