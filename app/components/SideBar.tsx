@@ -223,16 +223,6 @@ const sidebarSections: SidebarSection[] = [
         href: "/afacere/pontaj",
         icon: Hourglass,
       },
-      {
-        label: "Învoiri afacere",
-        href: "/afacere/invoiri",
-        icon: UserShield,
-      },
-      {
-        label: "Angajați afacere",
-        href: "/afacere/employees",
-        icon: Users,
-      },
     ],
   },
   {

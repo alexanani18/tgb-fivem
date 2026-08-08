@@ -74,8 +74,45 @@ export interface WorkflowDiscordRequestSnapshot {
   reviewedByName: string | null;
   reviewedAt: Date | null;
 
+  /*
+  |--------------------------------------------------------------------------
+  | RESIGNATION
+  |--------------------------------------------------------------------------
+  */
+
   effectiveDate: string | Date | null;
+
+  /*
+  |--------------------------------------------------------------------------
+  | COMMON
+  |--------------------------------------------------------------------------
+  */
+
   reason: string | null;
+
+  /*
+  |--------------------------------------------------------------------------
+  | LEAVE
+  |--------------------------------------------------------------------------
+  */
+
+  leaveStartDate: string | Date | null;
+  leaveEndDate: string | Date | null;
+
+  /*
+  |--------------------------------------------------------------------------
+  | INACTIVITY
+  |--------------------------------------------------------------------------
+  */
+
+  activity: string | null;
+  activityDate: string | Date | null;
+
+  /*
+  |--------------------------------------------------------------------------
+  | RESIGNATION PROGRESS
+  |--------------------------------------------------------------------------
+  */
 
   uniformReturned: boolean;
   uniformReturnedAt: Date | null;
@@ -97,8 +134,45 @@ interface WorkflowDiscordRequestSnapshotRow extends RowDataPacket {
   reviewed_by_name: string | null;
   reviewed_at: Date | null;
 
+  /*
+  |--------------------------------------------------------------------------
+  | RESIGNATION
+  |--------------------------------------------------------------------------
+  */
+
   effective_date: string | Date | null;
+
+  /*
+  |--------------------------------------------------------------------------
+  | COMMON
+  |--------------------------------------------------------------------------
+  */
+
   reason: string | null;
+
+  /*
+  |--------------------------------------------------------------------------
+  | LEAVE
+  |--------------------------------------------------------------------------
+  */
+
+  leave_start_date: string | Date | null;
+  leave_end_date: string | Date | null;
+
+  /*
+  |--------------------------------------------------------------------------
+  | INACTIVITY
+  |--------------------------------------------------------------------------
+  */
+
+  activity: string | null;
+  activity_date: string | Date | null;
+
+  /*
+  |--------------------------------------------------------------------------
+  | RESIGNATION PROGRESS
+  |--------------------------------------------------------------------------
+  */
 
   uniform_returned: number | null;
   uniform_returned_at: Date | null;
@@ -106,14 +180,27 @@ interface WorkflowDiscordRequestSnapshotRow extends RowDataPacket {
   completed_at: Date | null;
 }
 
+interface WorkflowDiscordActorNameRow extends RowDataPacket {
+  display_name: string | null;
+  username: string;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Snapshot mapper
+|--------------------------------------------------------------------------
+*/
+
 function mapWorkflowDiscordRequestSnapshot(
   row: WorkflowDiscordRequestSnapshotRow,
 ): WorkflowDiscordRequestSnapshot {
   return {
     workflowRequestId: Number(row.workflow_request_id),
+
     requestNumber: row.request_number,
 
     workflowTypeCode: row.workflow_type_code,
+
     workflowTypeName: row.workflow_type_name,
 
     statusCode: row.status_code,
@@ -125,7 +212,16 @@ function mapWorkflowDiscordRequestSnapshot(
     reviewedAt: row.reviewed_at,
 
     effectiveDate: row.effective_date,
+
     reason: row.reason,
+
+    leaveStartDate: row.leave_start_date,
+
+    leaveEndDate: row.leave_end_date,
+
+    activity: row.activity?.trim() || null,
+
+    activityDate: row.activity_date,
 
     uniformReturned: Boolean(row.uniform_returned),
 
@@ -134,6 +230,12 @@ function mapWorkflowDiscordRequestSnapshot(
     completedAt: row.completed_at,
   };
 }
+
+/*
+|--------------------------------------------------------------------------
+| Workflow Discord request snapshot
+|--------------------------------------------------------------------------
+*/
 
 export async function getWorkflowDiscordRequestSnapshot(
   workflowRequestId: number,
@@ -163,8 +265,54 @@ export async function getWorkflowDiscordRequestSnapshot(
 
           wr.reviewed_at,
 
+          /*
+          |--------------------------------------------------------------------------
+          | RESIGNATION
+          |--------------------------------------------------------------------------
+          */
+
           rr.effective_date,
-          rr.reason,
+
+          /*
+          |--------------------------------------------------------------------------
+          | COMMON REASON
+          |--------------------------------------------------------------------------
+          |
+          | Fiecare workflow are propriul tabel specific.
+          | Luăm reason-ul din tabelul care există pentru workflow-ul curent.
+          |
+          */
+
+          COALESCE(
+            ir.reason,
+            lr.reason,
+            rr.reason
+          ) AS reason,
+
+          /*
+          |--------------------------------------------------------------------------
+          | LEAVE
+          |--------------------------------------------------------------------------
+          */
+
+          lr.start_date AS leave_start_date,
+          lr.end_date AS leave_end_date,
+
+          /*
+          |--------------------------------------------------------------------------
+          | INACTIVITY
+          |--------------------------------------------------------------------------
+          */
+
+          ir.activity,
+          ir.activity_date,
+
+          /*
+          |--------------------------------------------------------------------------
+          | RESIGNATION PROGRESS
+          |--------------------------------------------------------------------------
+          */
+
           rr.uniform_returned,
           rr.uniform_returned_at,
           rr.completed_at
@@ -177,8 +325,38 @@ export async function getWorkflowDiscordRequestSnapshot(
         INNER JOIN workflow_statuses ws
           ON ws.id = wr.status_id
 
+        /*
+        |--------------------------------------------------------------------------
+        | RESIGNATION
+        |--------------------------------------------------------------------------
+        */
+
         LEFT JOIN resignation_requests rr
           ON rr.workflow_request_id = wr.id
+
+        /*
+        |--------------------------------------------------------------------------
+        | LEAVE
+        |--------------------------------------------------------------------------
+        */
+
+        LEFT JOIN leave_requests lr
+          ON lr.workflow_request_id = wr.id
+
+        /*
+        |--------------------------------------------------------------------------
+        | INACTIVITY
+        |--------------------------------------------------------------------------
+        */
+
+        LEFT JOIN inactivity_requests ir
+          ON ir.workflow_request_id = wr.id
+
+        /*
+        |--------------------------------------------------------------------------
+        | Employee / Reviewer identity
+        |--------------------------------------------------------------------------
+        */
 
         LEFT JOIN employee_contracts employee_contract
           ON employee_contract.user_id = wr.user_id
@@ -187,6 +365,7 @@ export async function getWorkflowDiscordRequestSnapshot(
           ON reviewer_contract.user_id = wr.reviewed_by
 
         WHERE wr.id = ?
+
         LIMIT 1
       `,
     [workflowRequestId],
@@ -199,95 +378,131 @@ export async function getWorkflowDiscordRequestSnapshot(
   return mapWorkflowDiscordRequestSnapshot(rows[0]);
 }
 
+/*
+|--------------------------------------------------------------------------
+| Channel mapper
+|--------------------------------------------------------------------------
+*/
+
 function mapWorkflowDiscordChannel(
   row: WorkflowDiscordChannelRow,
 ): WorkflowDiscordChannel {
   return {
     id: Number(row.id),
+
     workflowTypeId: Number(row.workflow_type_id),
+
     workflowTypeCode: row.workflow_type_code,
+
     workflowTypeName: row.workflow_type_name,
+
     requestPrefix: row.request_prefix,
 
     discordChannelId: row.discord_channel_id,
+
     isEnabled: Boolean(row.is_enabled),
 
     createdAt: row.created_at,
+
     updatedAt: row.updated_at,
   };
 }
+
+/*
+|--------------------------------------------------------------------------
+| Message mapper
+|--------------------------------------------------------------------------
+*/
 
 function mapWorkflowDiscordMessage(
   row: WorkflowDiscordMessageRow,
 ): WorkflowDiscordMessage {
   return {
     id: Number(row.id),
+
     workflowRequestId: Number(row.workflow_request_id),
+
     discordChannelId: row.discord_channel_id,
+
     discordMessageId: row.discord_message_id,
+
     createdAt: row.created_at,
+
     updatedAt: row.updated_at,
   };
 }
+
+/*
+|--------------------------------------------------------------------------
+| Get all workflow Discord channels
+|--------------------------------------------------------------------------
+*/
 
 export async function getWorkflowDiscordChannels(): Promise<
   WorkflowDiscordChannel[]
 > {
   const [rows] = await db.execute<WorkflowDiscordChannelRow[]>(
     `
-      SELECT
-        wdc.id,
-        wdc.workflow_type_id,
+        SELECT
+          wdc.id,
+          wdc.workflow_type_id,
 
-        wt.code AS workflow_type_code,
-        wt.name AS workflow_type_name,
-        wt.request_prefix,
+          wt.code AS workflow_type_code,
+          wt.name AS workflow_type_name,
+          wt.request_prefix,
 
-        wdc.discord_channel_id,
-        wdc.is_enabled,
+          wdc.discord_channel_id,
+          wdc.is_enabled,
 
-        wdc.created_at,
-        wdc.updated_at
+          wdc.created_at,
+          wdc.updated_at
 
-      FROM workflow_discord_channels wdc
+        FROM workflow_discord_channels wdc
 
-      INNER JOIN workflow_types wt
-        ON wt.id = wdc.workflow_type_id
+        INNER JOIN workflow_types wt
+          ON wt.id = wdc.workflow_type_id
 
-      ORDER BY wt.name ASC
-    `,
+        ORDER BY wt.name ASC
+      `,
   );
 
   return rows.map(mapWorkflowDiscordChannel);
 }
+
+/*
+|--------------------------------------------------------------------------
+| Get workflow Discord channel by workflow type ID
+|--------------------------------------------------------------------------
+*/
 
 export async function getWorkflowDiscordChannelByTypeId(
   workflowTypeId: number,
 ): Promise<WorkflowDiscordChannel | null> {
   const [rows] = await db.execute<WorkflowDiscordChannelRow[]>(
     `
-      SELECT
-        wdc.id,
-        wdc.workflow_type_id,
+        SELECT
+          wdc.id,
+          wdc.workflow_type_id,
 
-        wt.code AS workflow_type_code,
-        wt.name AS workflow_type_name,
-        wt.request_prefix,
+          wt.code AS workflow_type_code,
+          wt.name AS workflow_type_name,
+          wt.request_prefix,
 
-        wdc.discord_channel_id,
-        wdc.is_enabled,
+          wdc.discord_channel_id,
+          wdc.is_enabled,
 
-        wdc.created_at,
-        wdc.updated_at
+          wdc.created_at,
+          wdc.updated_at
 
-      FROM workflow_discord_channels wdc
+        FROM workflow_discord_channels wdc
 
-      INNER JOIN workflow_types wt
-        ON wt.id = wdc.workflow_type_id
+        INNER JOIN workflow_types wt
+          ON wt.id = wdc.workflow_type_id
 
-      WHERE wdc.workflow_type_id = ?
-      LIMIT 1
-    `,
+        WHERE wdc.workflow_type_id = ?
+
+        LIMIT 1
+      `,
     [workflowTypeId],
   );
 
@@ -298,33 +513,40 @@ export async function getWorkflowDiscordChannelByTypeId(
   return mapWorkflowDiscordChannel(rows[0]);
 }
 
+/*
+|--------------------------------------------------------------------------
+| Get workflow Discord channel by workflow type code
+|--------------------------------------------------------------------------
+*/
+
 export async function getWorkflowDiscordChannelByTypeCode(
   workflowTypeCode: string,
 ): Promise<WorkflowDiscordChannel | null> {
   const [rows] = await db.execute<WorkflowDiscordChannelRow[]>(
     `
-      SELECT
-        wdc.id,
-        wdc.workflow_type_id,
+        SELECT
+          wdc.id,
+          wdc.workflow_type_id,
 
-        wt.code AS workflow_type_code,
-        wt.name AS workflow_type_name,
-        wt.request_prefix,
+          wt.code AS workflow_type_code,
+          wt.name AS workflow_type_name,
+          wt.request_prefix,
 
-        wdc.discord_channel_id,
-        wdc.is_enabled,
+          wdc.discord_channel_id,
+          wdc.is_enabled,
 
-        wdc.created_at,
-        wdc.updated_at
+          wdc.created_at,
+          wdc.updated_at
 
-      FROM workflow_discord_channels wdc
+        FROM workflow_discord_channels wdc
 
-      INNER JOIN workflow_types wt
-        ON wt.id = wdc.workflow_type_id
+        INNER JOIN workflow_types wt
+          ON wt.id = wdc.workflow_type_id
 
-      WHERE wt.code = ?
-      LIMIT 1
-    `,
+        WHERE wt.code = ?
+
+        LIMIT 1
+      `,
     [workflowTypeCode],
   );
 
@@ -334,6 +556,12 @@ export async function getWorkflowDiscordChannelByTypeCode(
 
   return mapWorkflowDiscordChannel(rows[0]);
 }
+
+/*
+|--------------------------------------------------------------------------
+| Update workflow Discord channel
+|--------------------------------------------------------------------------
+*/
 
 export async function updateWorkflowDiscordChannel(
   input: UpdateWorkflowDiscordChannelInput,
@@ -360,22 +588,31 @@ export async function updateWorkflowDiscordChannel(
   return updatedChannel;
 }
 
+/*
+|--------------------------------------------------------------------------
+| Get saved Discord message
+|--------------------------------------------------------------------------
+*/
+
 export async function getWorkflowDiscordMessage(
   workflowRequestId: number,
 ): Promise<WorkflowDiscordMessage | null> {
   const [rows] = await db.execute<WorkflowDiscordMessageRow[]>(
     `
-      SELECT
-        id,
-        workflow_request_id,
-        discord_channel_id,
-        discord_message_id,
-        created_at,
-        updated_at
-      FROM workflow_discord_messages
-      WHERE workflow_request_id = ?
-      LIMIT 1
-    `,
+        SELECT
+          id,
+          workflow_request_id,
+          discord_channel_id,
+          discord_message_id,
+          created_at,
+          updated_at
+
+        FROM workflow_discord_messages
+
+        WHERE workflow_request_id = ?
+
+        LIMIT 1
+      `,
     [workflowRequestId],
   );
 
@@ -385,6 +622,12 @@ export async function getWorkflowDiscordMessage(
 
   return mapWorkflowDiscordMessage(rows[0]);
 }
+
+/*
+|--------------------------------------------------------------------------
+| Save Discord message
+|--------------------------------------------------------------------------
+*/
 
 export async function saveWorkflowDiscordMessage(
   input: SaveWorkflowDiscordMessageInput,
@@ -414,4 +657,58 @@ export async function saveWorkflowDiscordMessage(
   }
 
   return message;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Resolve actor full name
+|--------------------------------------------------------------------------
+|
+| Folosit inclusiv la:
+|
+| Șters de Nume Prenume
+|
+| Dacă utilizatorul nu are contract/nume disponibil,
+| folosim username-ul doar ca fallback.
+|
+*/
+
+export async function getWorkflowDiscordActorName(
+  userId: number,
+): Promise<string> {
+  const [rows] = await db.execute<WorkflowDiscordActorNameRow[]>(
+    `
+        SELECT
+          NULLIF(
+            TRIM(
+              CONCAT_WS(
+                ' ',
+                employee_contract.first_name,
+                employee_contract.last_name
+              )
+            ),
+            ''
+          ) AS display_name,
+
+          u.username
+
+        FROM users u
+
+        LEFT JOIN employee_contracts employee_contract
+          ON employee_contract.user_id = u.id
+
+        WHERE u.id = ?
+
+        LIMIT 1
+      `,
+    [userId],
+  );
+
+  const user = rows[0];
+
+  if (!user) {
+    return "Administrator necunoscut";
+  }
+
+  return user.display_name?.trim() || user.username;
 }
