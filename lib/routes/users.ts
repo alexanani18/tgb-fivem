@@ -29,21 +29,10 @@ import * as usersDatabase from "../database/users";
 import { db } from "../db";
 import { requireAdmin } from "../services/requireAdmin";
 import * as ranksDatabase from "../database/ranks";
+import sharp from "sharp";
 
 const router = Router();
 
-
-const CONTRACT_IDENTITIES_DIRECTORY = path.join(
-  process.cwd(),
-  "public",
-  "contract-images",
-);
-
-if (!fs.existsSync(CONTRACT_IDENTITIES_DIRECTORY)) {
-  fs.mkdirSync(CONTRACT_IDENTITIES_DIRECTORY, {
-    recursive: true,
-  });
-}
 
 const CONTRACT_IMAGES_DIRECTORY = path.join(
   process.cwd(),
@@ -51,6 +40,11 @@ const CONTRACT_IMAGES_DIRECTORY = path.join(
   "contract-images",
 );
 
+if (!fs.existsSync(CONTRACT_IMAGES_DIRECTORY)) {
+  fs.mkdirSync(CONTRACT_IMAGES_DIRECTORY, {
+    recursive: true,
+  });
+}
 const identityImageStorage = multer.diskStorage({
   destination(req, _file, callback) {
     const userId = parsePositiveInteger(req.params.userId);
@@ -71,28 +65,27 @@ const identityImageStorage = multer.diskStorage({
     callback(null, userDirectory);
   },
 
-  filename(_req, file, callback) {
-    const extension = path.extname(file.originalname).toLowerCase();
-
-    callback(null, `identity-${Date.now()}${extension}`);
+  filename(_req, _file, callback) {
+    callback(null, `identity-${Date.now()}.jpg`);
   },
 });
 
+const MAX_IDENTITY_IMAGE_SIZE = 5 * 1024 * 1024;
 const identityImageUpload = multer({
   storage: identityImageStorage,
 
   limits: {
-    fileSize: 10 * 1024 * 1024,
+    fileSize: MAX_IDENTITY_IMAGE_SIZE,
   },
 
   fileFilter(_req, file, callback) {
     const extension = path.extname(file.originalname).toLowerCase();
 
-    const allowedExtensions = [".jpg", ".jpeg", ".png", ".webp"];
+    const allowedExtensions = [".jpg", ".jpeg", ".png"];
 
     if (!allowedExtensions.includes(extension)) {
       callback(
-        new Error("Sunt acceptate doar imagini JPG, JPEG, PNG sau WEBP."),
+        new Error("Sunt acceptate doar imagini JPG, JPEG sau PNG."),
       );
 
       return;
@@ -270,7 +263,7 @@ router.get("/export/excel", requireAdmin, async (req, res) => {
   try {
     const employees = await usersDatabase.getEmployeesForExcelExport();
 
-const ranks = await ranksDatabase.getRanksForExport();
+    const ranks = await ranksDatabase.getRanksForExport();
 
     const workbook = new ExcelJS.Workbook();
 
@@ -1141,6 +1134,96 @@ router.patch("/:userId/resign", requireAdmin, async (req, res) => {
 
 /*
 |--------------------------------------------------------------------------
+| GET /users/:userId/contract/identity-image
+|--------------------------------------------------------------------------
+|
+| Returnează poza de buletin a unui angajat.
+| Doar ADMIN.
+|
+*/
+
+router.get(
+  "/:userId/contract/identity-image",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const userId = parsePositiveInteger(req.params.userId);
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: "ID-ul angajatului este invalid.",
+        });
+      }
+
+      const contract = await usersDatabase.getEmployeeIdentityContract(userId);
+
+      if (!contract || !contract.identity_image_path) {
+        return res.status(404).json({
+          success: false,
+          message: "Poza de buletin nu a fost găsită.",
+        });
+      }
+
+      const relativeImagePath = contract.identity_image_path.replace(
+        /^\/+/,
+        "",
+      );
+
+      const contractsDirectory = path.resolve(
+        process.cwd(),
+        "public",
+        "contract-images",
+      );
+
+      const imagePath = path.resolve(
+        process.cwd(),
+        "public",
+        relativeImagePath,
+      );
+
+      if (
+        imagePath !== contractsDirectory &&
+        !imagePath.startsWith(`${contractsDirectory}${path.sep}`)
+      ) {
+        return res.status(404).json({
+          success: false,
+          message: "Poza de buletin nu a fost găsită.",
+        });
+      }
+
+      return res.sendFile(imagePath, (error) => {
+        if (error && !res.headersSent) {
+          const sendFileError = error as Error & {
+            statusCode?: number;
+          };
+
+          console.error("Send identity image error:", sendFileError);
+
+          return res
+            .status(sendFileError.statusCode === 404 ? 404 : 500)
+            .json({
+              success: false,
+              message:
+                sendFileError.statusCode === 404
+                  ? "Poza de buletin nu a fost găsită."
+                  : "Poza de buletin nu a putut fi încărcată.",
+            });
+        }
+      });
+    } catch (error) {
+      console.error("Get identity image error:", error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Poza de buletin nu a putut fi încărcată.",
+      });
+    }
+  },
+);
+
+/*
+|--------------------------------------------------------------------------
 | PATCH /users/:userId/contract/identity-image
 |--------------------------------------------------------------------------
 |
@@ -1171,6 +1254,46 @@ router.patch(
         return res.status(400).json({
           success: false,
           message: "Nu ai selectat nicio imagine.",
+        });
+      }
+
+      try {
+        const imageMetadata = await sharp(req.file.path).metadata();
+
+        if (
+          imageMetadata.format !== "jpeg" &&
+          imageMetadata.format !== "png"
+        ) {
+          fs.unlinkSync(req.file.path);
+
+          return res.status(400).json({
+            success: false,
+            message: "Poza de buletin trebuie să fie un JPEG sau PNG valid.",
+          });
+        }
+
+        const processedFilePath = `${req.file.path}.processed`;
+
+        await sharp(req.file.path)
+          .jpeg({
+            quality: 90,
+            mozjpeg: true,
+          })
+          .toFile(processedFilePath);
+
+        fs.renameSync(processedFilePath, req.file.path);
+      } catch (error) {
+        console.error("Identity image validation error:", error);
+
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch {
+          // Fișierul nu mai există.
+        }
+
+        return res.status(400).json({
+          success: false,
+          message: "Fișierul încărcat nu este o imagine validă.",
         });
       }
 
@@ -1391,45 +1514,45 @@ router.patch("/:userId/contract", requireAdmin, async (req, res) => {
     const contractExists = await employeeContractExists(connection, userId);
 
     if (!contractExists) {
-        await connection.rollback();
-
-        return res.status(404).json({
-          success: false,
-          message: "Contractul angajatului nu a fost găsit.",
-        });
-      }
-
-      await updateEmployeeContract(connection, userId, {
-        firstName: normalizedFirstName,
-        lastName: normalizedLastName,
-        age: normalizedAge,
-        gameId: normalizedIban,
-        ciSeries: normalizedCiSeries,
-        phoneNumber: normalizedPhoneNumber,
-        cityHours: normalizedCityHours,
-        status: normalizedStatus,
-        signatureName: normalizedSignatureName,
-      });
-
-      await connection.commit();
-
-      return res.status(200).json({
-        success: true,
-        message: "Datele contractului au fost actualizate.",
-      });
-    } catch (error) {
       await connection.rollback();
 
-      console.error("Update employee contract error:", error);
-
-      return res.status(500).json({
+      return res.status(404).json({
         success: false,
-        message: "Datele contractului nu au putut fi actualizate.",
+        message: "Contractul angajatului nu a fost găsit.",
       });
-    } finally {
-      connection.release();
     }
-  });
+
+    await updateEmployeeContract(connection, userId, {
+      firstName: normalizedFirstName,
+      lastName: normalizedLastName,
+      age: normalizedAge,
+      gameId: normalizedIban,
+      ciSeries: normalizedCiSeries,
+      phoneNumber: normalizedPhoneNumber,
+      cityHours: normalizedCityHours,
+      status: normalizedStatus,
+      signatureName: normalizedSignatureName,
+    });
+
+    await connection.commit();
+
+    return res.status(200).json({
+      success: true,
+      message: "Datele contractului au fost actualizate.",
+    });
+  } catch (error) {
+    await connection.rollback();
+
+    console.error("Update employee contract error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Datele contractului nu au putut fi actualizate.",
+    });
+  } finally {
+    connection.release();
+  }
+});
 
 /*
 |--------------------------------------------------------------------------

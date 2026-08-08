@@ -672,7 +672,7 @@ export default function AdminContractDetailsPage() {
 
                     <div className="relative mt-5 min-h-80 overflow-hidden rounded-xl border border-white/10 bg-black/40">
                       <Image
-                        src={`${API_URL}${contract.identityImagePath}`}
+                        src={`${API_URL}/api/contracts/admin/${contract.id}/identity-image`}
                         alt="Poză buletin"
                         fill
                         unoptimized

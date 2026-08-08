@@ -301,6 +301,114 @@ router.get(
 
 /*
 |--------------------------------------------------------------------------
+| GET /api/notification-submissions/file/:submissionId
+|--------------------------------------------------------------------------
+|
+| Returnează fișierul unei dovezi doar utilizatorului care a încărcat-o
+| sau unui ADMIN.
+|
+*/
+
+router.get(
+  "/file/:submissionId",
+  requireAuth,
+  async (req: Request, res: Response) => {
+    try {
+      const sessionUser = getSessionUser(req)!;
+
+      const submissionId = parsePositiveInteger(req.params.submissionId);
+
+      if (!submissionId) {
+        return res.status(400).json({
+          success: false,
+          message: "ID-ul dovezii este invalid.",
+        });
+      }
+
+      const submission =
+        await notificationSubmissionsDatabase.getSubmissionById(
+          submissionId,
+        );
+
+      if (!submission) {
+        return res.status(404).json({
+          success: false,
+          message: "Dovada nu există.",
+        });
+      }
+
+      if (
+        sessionUser.role !== "ADMIN" &&
+        submission.uploaded_by !== sessionUser.id
+      ) {
+        return res.status(404).json({
+          success: false,
+          message: "Dovada nu există.",
+        });
+      }
+
+      const relativeFilePath = submission.file_path.replace(/^\/+/, "");
+
+      const absoluteFilePath = path.join(
+        process.cwd(),
+        "public",
+        relativeFilePath,
+      );
+
+      const submissionsDirectory = path.resolve(SUBMISSIONS_DIRECTORY);
+      const resolvedFilePath = path.resolve(absoluteFilePath);
+
+      if (
+        resolvedFilePath !== submissionsDirectory &&
+        !resolvedFilePath.startsWith(`${submissionsDirectory}${path.sep}`)
+      ) {
+        console.error(
+          "Blocked notification submission path traversal:",
+          submission.file_path,
+        );
+
+        return res.status(404).json({
+          success: false,
+          message: "Fișierul nu există.",
+        });
+      }
+
+      return res.sendFile(resolvedFilePath, (error) => {
+        if (error && !res.headersSent) {
+          const sendFileError = error as Error & {
+            statusCode?: number;
+          };
+
+          console.error(
+            "Failed to send notification submission file:",
+            sendFileError,
+          );
+
+          return res
+            .status(sendFileError.statusCode === 404 ? 404 : 500)
+            .json({
+              success: false,
+              message:
+                sendFileError.statusCode === 404
+                  ? "Fișierul nu există."
+                  : "Fișierul nu a putut fi încărcat.",
+            });
+        }
+      });
+    } catch (error) {
+      console.error("Failed to load notification submission file:", error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Fișierul nu a putut fi încărcat.",
+      });
+    }
+  },
+);
+
+
+/*
+|--------------------------------------------------------------------------
 | GET /:notificationImageId
 |--------------------------------------------------------------------------
 */

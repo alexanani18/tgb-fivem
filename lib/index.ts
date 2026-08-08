@@ -39,18 +39,6 @@ const PORT = Number(process.env.API_PORT) || 5000;
 app.use(express.urlencoded({ extended: true }));
 
 app.use(
-  "/notification-submissions",
-  express.static(
-    path.join(process.cwd(), "public", "notification-submissions"),
-  ),
-);
-
-app.use(
-  "/contract-images",
-  express.static(path.join(process.cwd(), "public", "contract-images")),
-);
-
-app.use(
   "/generated-contracts",
   express.static(path.join(process.cwd(), "public", "generated-contracts")),
 );

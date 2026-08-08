@@ -1031,7 +1031,7 @@ function ContractTab({
           {contract.identityImagePath ? (
             <div className="relative h-[500px] w-full">
               <Image
-                src={`${API_URL}${contract.identityImagePath}`}
+                src={`${API_URL}/users/${employee.id}/contract/identity-image`}
                 alt="Buletin angajat"
                 fill
                 unoptimized

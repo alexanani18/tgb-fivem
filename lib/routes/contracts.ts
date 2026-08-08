@@ -147,7 +147,82 @@ router.get("/me", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/me/document", async (req, res) => {
+router.get("/me/identity-image", requireAuth, async (req, res) => {
+  try {
+    const sessionUser = req.session.user;
+
+    if (!sessionUser) {
+      return res.status(401).json({
+        success: false,
+        message: "Nu există o sesiune activă.",
+      });
+    }
+
+    const contract = await contractsDatabase.getOwnContract(sessionUser.id);
+
+    if (!contract?.identity_image_path) {
+      return res.status(404).json({
+        success: false,
+        message: "Imaginea contractului nu există.",
+      });
+    }
+
+    const contractImagesDirectory = path.resolve(
+      process.cwd(),
+      "public",
+      "contract-images",
+    );
+
+    const absoluteFilePath = path.resolve(
+      process.cwd(),
+      "public",
+      contract.identity_image_path.replace(/^\/+/, ""),
+    );
+
+    if (
+      !absoluteFilePath.startsWith(
+        `${contractImagesDirectory}${path.sep}`,
+      )
+    ) {
+      return res.status(404).json({
+        success: false,
+        message: "Imaginea contractului nu există.",
+      });
+    }
+
+    return res.sendFile(absoluteFilePath, (error) => {
+      if (error && !res.headersSent) {
+        const sendFileError = error as Error & {
+          statusCode?: number;
+        };
+
+        console.error(
+          "Failed to send employee identity image:",
+          sendFileError,
+        );
+
+        return res
+          .status(sendFileError.statusCode === 404 ? 404 : 500)
+          .json({
+            success: false,
+            message:
+              sendFileError.statusCode === 404
+                ? "Imaginea contractului nu există."
+                : "Imaginea contractului nu a putut fi încărcată.",
+          });
+      }
+    });
+  } catch (error) {
+    console.error("Get employee identity image error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Imaginea contractului nu a putut fi încărcată.",
+    });
+  }
+});
+
+router.get("/me/document", requireAuth, async (req, res) => {
   try {
     const sessionUser = req.session.user;
 
@@ -563,6 +638,86 @@ router.get("/admin", requireAdmin, async (_req, res) => {
     });
   }
 });
+
+router.get(
+  "/admin/:contractId/identity-image",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const contractId = Number(req.params.contractId);
+
+      if (!Number.isInteger(contractId) || contractId <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "ID-ul contractului este invalid.",
+        });
+      }
+
+      const contract =
+        await contractsDatabase.getAdminContractById(contractId);
+
+      if (!contract?.identity_image_path) {
+        return res.status(404).json({
+          success: false,
+          message: "Imaginea contractului nu există.",
+        });
+      }
+
+      const contractImagesDirectory = path.resolve(
+        process.cwd(),
+        "public",
+        "contract-images",
+      );
+
+      const absoluteFilePath = path.resolve(
+        process.cwd(),
+        "public",
+        contract.identity_image_path.replace(/^\/+/, ""),
+      );
+
+      if (
+        !absoluteFilePath.startsWith(
+          `${contractImagesDirectory}${path.sep}`,
+        )
+      ) {
+        return res.status(404).json({
+          success: false,
+          message: "Imaginea contractului nu există.",
+        });
+      }
+
+      return res.sendFile(absoluteFilePath, (error) => {
+        if (error && !res.headersSent) {
+          const sendFileError = error as Error & {
+            statusCode?: number;
+          };
+
+          console.error(
+            "Failed to send admin contract identity image:",
+            sendFileError,
+          );
+
+          return res
+            .status(sendFileError.statusCode === 404 ? 404 : 500)
+            .json({
+              success: false,
+              message:
+                sendFileError.statusCode === 404
+                  ? "Imaginea contractului nu există."
+                  : "Imaginea contractului nu a putut fi încărcată.",
+            });
+        }
+      });
+    } catch (error) {
+      console.error("Get admin contract identity image error:", error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Imaginea contractului nu a putut fi încărcată.",
+      });
+    }
+  },
+);
 
 router.post("/admin/:contractId/generate", requireAdmin, async (req, res) => {
   try {

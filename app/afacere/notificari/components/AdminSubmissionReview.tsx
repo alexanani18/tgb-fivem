@@ -348,7 +348,7 @@ export default function AdminSubmissionReview() {
 
                     <div className="relative aspect-video overflow-hidden rounded-xl border border-white/10 bg-black">
                       <Image
-                        src={`${API_URL}${submission.file_path}`}
+                        src={`${API_URL}/api/notification-submissions/file/${submission.id}`}
                         alt="Dovadă încărcată"
                         fill
                         unoptimized
