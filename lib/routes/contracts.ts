@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { Router } from "express";
 import multer from "multer";
+import sharp from "sharp";
 
 import { db } from "../db";
 import { requireAuth } from "../services/requireAuth";
@@ -38,10 +39,8 @@ const identityImageStorage = multer.diskStorage({
     return callback(null, userDirectory);
   },
 
-  filename: (_req, file, callback) => {
-    const extension = path.extname(file.originalname).toLowerCase();
-
-    const fileName = `identity-${Date.now()}${extension}`;
+  filename: (_req, _file, callback) => {
+    const fileName = `identity-${Date.now()}.jpg`;
 
     return callback(null, fileName);
   },
@@ -215,6 +214,45 @@ router.post(
         success: false,
         message: "Doar utilizatorii GUEST pot semna un contract nou.",
       });
+    }
+
+    if (req.file) {
+      const processedFilePath = `${req.file.path}.processed`;
+
+      try {
+        const imageMetadata = await sharp(req.file.path).metadata();
+
+        if (
+          imageMetadata.format !== "jpeg" &&
+          imageMetadata.format !== "png"
+        ) {
+          deleteUploadedFile(uploadedFilePath);
+
+          return res.status(400).json({
+            success: false,
+            message: "Poza buletinului trebuie să fie un JPEG sau PNG valid.",
+          });
+        }
+
+        await sharp(req.file.path)
+          .jpeg({
+            quality: 90,
+            mozjpeg: true,
+          })
+          .toFile(processedFilePath);
+
+        fs.renameSync(processedFilePath, req.file.path);
+      } catch (error) {
+        console.error("Identity image validation error:", error);
+
+        deleteUploadedFile(uploadedFilePath);
+        deleteUploadedFile(processedFilePath);
+
+        return res.status(400).json({
+          success: false,
+          message: "Fișierul încărcat nu este o imagine validă.",
+        });
+      }
     }
 
     const {
