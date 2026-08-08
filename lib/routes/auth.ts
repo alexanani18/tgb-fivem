@@ -66,6 +66,17 @@ router.post("/login", loginRateLimit, async (req, res) => {
       });
     }
 
+    await new Promise<void>((resolve, reject) => {
+      req.session.regenerate((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+
     req.session.user = {
       id: user.id,
       username: user.username,
