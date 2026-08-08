@@ -23,6 +23,7 @@ import type {
 } from "../types/users";
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import multer from "multer";
 import ExcelJS from "exceljs";
 import * as usersDatabase from "../database/users";
@@ -66,7 +67,7 @@ const identityImageStorage = multer.diskStorage({
   },
 
   filename(_req, _file, callback) {
-    callback(null, `identity-${Date.now()}.jpg`);
+    callback(null, `identity-${randomUUID()}.jpg`);
   },
 });
 
@@ -1257,6 +1258,8 @@ router.patch(
         });
       }
 
+      let processedFilePath: string | null = null;
+
       try {
         const imageMetadata = await sharp(req.file.path).metadata();
 
@@ -1272,7 +1275,7 @@ router.patch(
           });
         }
 
-        const processedFilePath = `${req.file.path}.processed`;
+        processedFilePath = `${req.file.path}.processed`;
 
         await sharp(req.file.path)
           .jpeg({
@@ -1285,10 +1288,23 @@ router.patch(
       } catch (error) {
         console.error("Identity image validation error:", error);
 
+        if (processedFilePath) {
+          try {
+            if (fs.existsSync(processedFilePath)) {
+              fs.unlinkSync(processedFilePath);
+            }
+          } catch (cleanupError) {
+            console.error(
+              "Failed to clean up processed identity image:",
+              cleanupError,
+            );
+          }
+        }
+
         try {
           fs.unlinkSync(req.file.path);
         } catch {
-          // Fișierul nu mai există.
+          // File does not exist.
         }
 
         return res.status(400).json({
@@ -1300,7 +1316,16 @@ router.patch(
       const contract = await usersDatabase.getEmployeeIdentityContract(userId);
 
       if (!contract) {
-        fs.unlinkSync(req.file.path);
+        try {
+          if (fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+          }
+        } catch (cleanupError) {
+          console.error(
+            "Failed to clean up uploaded identity image:",
+            cleanupError,
+          );
+        }
 
         return res.status(404).json({
           success: false,
