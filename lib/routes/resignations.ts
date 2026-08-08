@@ -9,7 +9,8 @@ import {
   completeResignationRequest,
   confirmResignationUniformReturn,
   createResignationRequest,
-  getResignationByWorkflowId,
+  getResignationByWorkflowIdForAdmin,
+  getResignationByWorkflowIdForUser,
   rejectResignationRequest,
   getAllResignationRequests,
   getResignationRequestsForUser,
@@ -132,7 +133,15 @@ router.get("/admin", requireAdmin, async (_req, res) => {
 
 router.get("/:id", requireAuth, async (req, res) => {
   try {
+    const viewer = req.session.user;
     const workflowRequestId = Number(req.params.id);
+
+    if (!viewer) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized.",
+      });
+    }
 
     if (!Number.isInteger(workflowRequestId) || workflowRequestId <= 0) {
       return res.status(400).json({
@@ -141,7 +150,13 @@ router.get("/:id", requireAuth, async (req, res) => {
       });
     }
 
-    const resignation = await getResignationByWorkflowId(workflowRequestId);
+    const resignation =
+      viewer.role === "ADMIN"
+        ? await getResignationByWorkflowIdForAdmin(workflowRequestId)
+        : await getResignationByWorkflowIdForUser(
+            workflowRequestId,
+            viewer.id,
+          );
 
     if (!resignation) {
       return res.status(404).json({

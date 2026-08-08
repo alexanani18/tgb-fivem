@@ -383,31 +383,62 @@ async function getInactivityByWorkflowIdWithConnection(
   return mapInactivity(rows[0]);
 }
 
-export async function getInactivityByWorkflowId(
+export async function getInactivityByWorkflowIdForUser(
+  workflowRequestId: number,
+  userId: number,
+): Promise<InactivityRequest | null> {
+  const [rows] = await db.execute<InactivityRow[]>(
+    `
+      SELECT
+        ir.id,
+        ir.workflow_request_id,
+        ir.activity,
+        ir.activity_date,
+        ir.reason,
+        ir.created_at,
+        ir.updated_at
+      FROM inactivity_requests ir
+      INNER JOIN workflow_requests wr
+        ON wr.id = ir.workflow_request_id
+      INNER JOIN workflow_types wt
+        ON wt.id = wr.workflow_type_id
+      WHERE ir.workflow_request_id = ?
+        AND wr.user_id = ?
+        AND wt.code = 'INACTIVITY'
+      LIMIT 1
+    `,
+    [workflowRequestId, userId],
+  );
+
+  return rows[0] ? mapInactivity(rows[0]) : null;
+}
+
+export async function getInactivityByWorkflowIdForAdmin(
   workflowRequestId: number,
 ): Promise<InactivityRequest | null> {
   const [rows] = await db.execute<InactivityRow[]>(
     `
       SELECT
-        id,
-        workflow_request_id,
-        activity,
-        activity_date,
-        reason,
-        created_at,
-        updated_at
-      FROM inactivity_requests
-      WHERE workflow_request_id = ?
+        ir.id,
+        ir.workflow_request_id,
+        ir.activity,
+        ir.activity_date,
+        ir.reason,
+        ir.created_at,
+        ir.updated_at
+      FROM inactivity_requests ir
+      INNER JOIN workflow_requests wr
+        ON wr.id = ir.workflow_request_id
+      INNER JOIN workflow_types wt
+        ON wt.id = wr.workflow_type_id
+      WHERE ir.workflow_request_id = ?
+        AND wt.code = 'INACTIVITY'
       LIMIT 1
     `,
     [workflowRequestId],
   );
 
-  if (rows.length === 0) {
-    return null;
-  }
-
-  return mapInactivity(rows[0]);
+  return rows[0] ? mapInactivity(rows[0]) : null;
 }
 
 export async function getInactivityById(
@@ -898,7 +929,7 @@ export async function approveInactivityRequest(
     const updatedWorkflow = await getWorkflowRequestById(workflowRequestId);
 
     const updatedInactivity =
-      await getInactivityByWorkflowId(workflowRequestId);
+      await getInactivityByWorkflowIdForAdmin(workflowRequestId);
 
     if (!updatedWorkflow || !updatedInactivity) {
       throw new Error("Approved inactivity request could not be loaded.");
@@ -996,7 +1027,7 @@ export async function rejectInactivityRequest(
       input.workflowRequestId,
     );
 
-    const updatedInactivity = await getInactivityByWorkflowId(
+    const updatedInactivity = await getInactivityByWorkflowIdForAdmin(
       input.workflowRequestId,
     );
 

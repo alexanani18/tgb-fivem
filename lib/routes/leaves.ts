@@ -5,7 +5,8 @@ import {
   createLeaveRequest,
   deleteLeaveRequest,
   getAllLeaveRequests,
-  getLeaveByWorkflowId,
+  getLeaveByWorkflowIdForAdmin,
+  getLeaveByWorkflowIdForUser,
   getLeaveRequestsForUser,
   rejectLeaveRequest,
   deleteOwnPendingLeaveRequest,
@@ -161,7 +162,15 @@ router.get("/admin", requireAdmin, async (_req, res) => {
 
 router.get("/:id", requireAuth, async (req, res) => {
   try {
+    const viewer = req.session.user;
     const workflowRequestId = Number(req.params.id);
+
+    if (!viewer) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized.",
+      });
+    }
 
     if (!Number.isInteger(workflowRequestId) || workflowRequestId <= 0) {
       return res.status(400).json({
@@ -170,7 +179,10 @@ router.get("/:id", requireAuth, async (req, res) => {
       });
     }
 
-    const leave = await getLeaveByWorkflowId(workflowRequestId);
+    const leave =
+      viewer.role === "ADMIN"
+        ? await getLeaveByWorkflowIdForAdmin(workflowRequestId)
+        : await getLeaveByWorkflowIdForUser(workflowRequestId, viewer.id);
 
     if (!leave) {
       return res.status(404).json({

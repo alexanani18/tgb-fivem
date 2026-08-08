@@ -365,35 +365,70 @@ async function getResignationByWorkflowIdWithConnection(
   return mapResignation(rows[0]);
 }
 
-export async function getResignationByWorkflowId(
+export async function getResignationByWorkflowIdForUser(
+  workflowRequestId: number,
+  userId: number,
+): Promise<ResignationRequest | null> {
+  const [rows] = await db.execute<ResignationRow[]>(
+    `
+      SELECT
+        rr.id,
+        rr.workflow_request_id,
+        rr.effective_date,
+        rr.reason,
+        rr.uniform_returned,
+        rr.uniform_returned_at,
+        rr.uniform_returned_confirmed_by,
+        rr.completed_at,
+        rr.completed_by,
+        rr.created_at,
+        rr.updated_at
+      FROM resignation_requests rr
+      INNER JOIN workflow_requests wr
+        ON wr.id = rr.workflow_request_id
+      INNER JOIN workflow_types wt
+        ON wt.id = wr.workflow_type_id
+      WHERE rr.workflow_request_id = ?
+        AND wr.user_id = ?
+        AND wt.code = 'RESIGNATION'
+      LIMIT 1
+    `,
+    [workflowRequestId, userId],
+  );
+
+  return rows[0] ? mapResignation(rows[0]) : null;
+}
+
+export async function getResignationByWorkflowIdForAdmin(
   workflowRequestId: number,
 ): Promise<ResignationRequest | null> {
   const [rows] = await db.execute<ResignationRow[]>(
     `
       SELECT
-        id,
-        workflow_request_id,
-        effective_date,
-        reason,
-        uniform_returned,
-        uniform_returned_at,
-        uniform_returned_confirmed_by,
-        completed_at,
-        completed_by,
-        created_at,
-        updated_at
-      FROM resignation_requests
-      WHERE workflow_request_id = ?
+        rr.id,
+        rr.workflow_request_id,
+        rr.effective_date,
+        rr.reason,
+        rr.uniform_returned,
+        rr.uniform_returned_at,
+        rr.uniform_returned_confirmed_by,
+        rr.completed_at,
+        rr.completed_by,
+        rr.created_at,
+        rr.updated_at
+      FROM resignation_requests rr
+      INNER JOIN workflow_requests wr
+        ON wr.id = rr.workflow_request_id
+      INNER JOIN workflow_types wt
+        ON wt.id = wr.workflow_type_id
+      WHERE rr.workflow_request_id = ?
+        AND wt.code = 'RESIGNATION'
       LIMIT 1
     `,
     [workflowRequestId],
   );
 
-  if (rows.length === 0) {
-    return null;
-  }
-
-  return mapResignation(rows[0]);
+  return rows[0] ? mapResignation(rows[0]) : null;
 }
 
 async function getEmployeeStateWithConnection(
@@ -677,7 +712,7 @@ export async function approveResignationRequest(
     const updatedWorkflow = await getWorkflowRequestById(workflowRequestId);
 
     const updatedResignation =
-      await getResignationByWorkflowId(workflowRequestId);
+      await getResignationByWorkflowIdForAdmin(workflowRequestId);
 
     if (!updatedWorkflow || !updatedResignation) {
       throw new Error("Approved resignation could not be loaded.");
@@ -771,7 +806,7 @@ export async function rejectResignationRequest(
       input.workflowRequestId,
     );
 
-    const updatedResignation = await getResignationByWorkflowId(
+    const updatedResignation = await getResignationByWorkflowIdForAdmin(
       input.workflowRequestId,
     );
 
@@ -875,7 +910,7 @@ export async function confirmResignationUniformReturn(
     const updatedWorkflow = await getWorkflowRequestById(workflowRequestId);
 
     const updatedResignation =
-      await getResignationByWorkflowId(workflowRequestId);
+      await getResignationByWorkflowIdForAdmin(workflowRequestId);
 
     if (!updatedWorkflow || !updatedResignation) {
       throw new Error(
@@ -988,7 +1023,7 @@ export async function completeResignationRequest(
     const updatedWorkflow = await getWorkflowRequestById(workflowRequestId);
 
     const updatedResignation =
-      await getResignationByWorkflowId(workflowRequestId);
+      await getResignationByWorkflowIdForAdmin(workflowRequestId);
 
     if (!updatedWorkflow || !updatedResignation) {
       throw new Error("Completed resignation could not be loaded.");

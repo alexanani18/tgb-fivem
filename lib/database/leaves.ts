@@ -249,31 +249,62 @@ async function getLeaveByWorkflowIdWithConnection(
   return mapLeave(rows[0]);
 }
 
-export async function getLeaveByWorkflowId(
+export async function getLeaveByWorkflowIdForUser(
+  workflowRequestId: number,
+  userId: number,
+): Promise<LeaveRequest | null> {
+  const [rows] = await db.execute<LeaveRow[]>(
+    `
+      SELECT
+        lr.id,
+        lr.workflow_request_id,
+        lr.start_date,
+        lr.end_date,
+        lr.reason,
+        lr.created_at,
+        lr.updated_at
+      FROM leave_requests lr
+      INNER JOIN workflow_requests wr
+        ON wr.id = lr.workflow_request_id
+      INNER JOIN workflow_types wt
+        ON wt.id = wr.workflow_type_id
+      WHERE lr.workflow_request_id = ?
+        AND wr.user_id = ?
+        AND wt.code = 'LEAVE'
+      LIMIT 1
+    `,
+    [workflowRequestId, userId],
+  );
+
+  return rows[0] ? mapLeave(rows[0]) : null;
+}
+
+export async function getLeaveByWorkflowIdForAdmin(
   workflowRequestId: number,
 ): Promise<LeaveRequest | null> {
   const [rows] = await db.execute<LeaveRow[]>(
     `
       SELECT
-        id,
-        workflow_request_id,
-        start_date,
-        end_date,
-        reason,
-        created_at,
-        updated_at
-      FROM leave_requests
-      WHERE workflow_request_id = ?
+        lr.id,
+        lr.workflow_request_id,
+        lr.start_date,
+        lr.end_date,
+        lr.reason,
+        lr.created_at,
+        lr.updated_at
+      FROM leave_requests lr
+      INNER JOIN workflow_requests wr
+        ON wr.id = lr.workflow_request_id
+      INNER JOIN workflow_types wt
+        ON wt.id = wr.workflow_type_id
+      WHERE lr.workflow_request_id = ?
+        AND wt.code = 'LEAVE'
       LIMIT 1
     `,
     [workflowRequestId],
   );
 
-  if (rows.length === 0) {
-    return null;
-  }
-
-  return mapLeave(rows[0]);
+  return rows[0] ? mapLeave(rows[0]) : null;
 }
 
 export async function getLeaveById(
@@ -746,7 +777,7 @@ export async function approveLeaveRequest(
 
     const updatedWorkflow = await getWorkflowRequestById(workflowRequestId);
 
-    const updatedLeave = await getLeaveByWorkflowId(workflowRequestId);
+    const updatedLeave = await getLeaveByWorkflowIdForAdmin(workflowRequestId);
 
     if (!updatedWorkflow || !updatedLeave) {
       throw new Error("Approved leave request could not be loaded.");
@@ -840,7 +871,9 @@ export async function rejectLeaveRequest(
       input.workflowRequestId,
     );
 
-    const updatedLeave = await getLeaveByWorkflowId(input.workflowRequestId);
+    const updatedLeave = await getLeaveByWorkflowIdForAdmin(
+      input.workflowRequestId,
+    );
 
     if (!updatedWorkflow || !updatedLeave) {
       throw new Error("Rejected leave request could not be loaded.");

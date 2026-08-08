@@ -6,7 +6,8 @@ import {
   deleteInactivityRequest,
   deleteOwnPendingInactivityRequest,
   getAllInactivityRequests,
-  getInactivityByWorkflowId,
+  getInactivityByWorkflowIdForAdmin,
+  getInactivityByWorkflowIdForUser,
   getInactivityRequestsForUser,
   rejectInactivityRequest,
 } from "../database/inactivityRequests";
@@ -160,7 +161,15 @@ router.get("/admin", requireAdmin, async (_req, res) => {
 
 router.get("/:id", requireAuth, async (req, res) => {
   try {
+    const viewer = req.session.user;
     const workflowRequestId = Number(req.params.id);
+
+    if (!viewer) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized.",
+      });
+    }
 
     if (!Number.isInteger(workflowRequestId) || workflowRequestId <= 0) {
       return res.status(400).json({
@@ -169,7 +178,13 @@ router.get("/:id", requireAuth, async (req, res) => {
       });
     }
 
-    const inactivity = await getInactivityByWorkflowId(workflowRequestId);
+    const inactivity =
+      viewer.role === "ADMIN"
+        ? await getInactivityByWorkflowIdForAdmin(workflowRequestId)
+        : await getInactivityByWorkflowIdForUser(
+            workflowRequestId,
+            viewer.id,
+          );
 
     if (!inactivity) {
       return res.status(404).json({
