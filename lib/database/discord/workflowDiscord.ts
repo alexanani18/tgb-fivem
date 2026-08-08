@@ -77,6 +77,9 @@ export interface WorkflowDiscordRequestSnapshot {
   effectiveDate: string | Date | null;
   reason: string | null;
 
+  leaveStartDate: string | Date | null;
+  leaveEndDate: string | Date | null;
+
   uniformReturned: boolean;
   uniformReturnedAt: Date | null;
 
@@ -100,10 +103,18 @@ interface WorkflowDiscordRequestSnapshotRow extends RowDataPacket {
   effective_date: string | Date | null;
   reason: string | null;
 
+  leave_start_date: string | Date | null;
+  leave_end_date: string | Date | null;
+
   uniform_returned: number | null;
   uniform_returned_at: Date | null;
 
   completed_at: Date | null;
+}
+
+interface WorkflowDiscordActorNameRow extends RowDataPacket {
+  display_name: string | null;
+  username: string;
 }
 
 function mapWorkflowDiscordRequestSnapshot(
@@ -126,6 +137,9 @@ function mapWorkflowDiscordRequestSnapshot(
 
     effectiveDate: row.effective_date,
     reason: row.reason,
+
+    leaveStartDate: row.leave_start_date,
+    leaveEndDate: row.leave_end_date,
 
     uniformReturned: Boolean(row.uniform_returned),
 
@@ -164,7 +178,12 @@ export async function getWorkflowDiscordRequestSnapshot(
           wr.reviewed_at,
 
           rr.effective_date,
-          rr.reason,
+
+          COALESCE(lr.reason, rr.reason) AS reason,
+
+          lr.start_date AS leave_start_date,
+          lr.end_date AS leave_end_date,
+
           rr.uniform_returned,
           rr.uniform_returned_at,
           rr.completed_at
@@ -179,6 +198,9 @@ export async function getWorkflowDiscordRequestSnapshot(
 
         LEFT JOIN resignation_requests rr
           ON rr.workflow_request_id = wr.id
+
+        LEFT JOIN leave_requests lr
+          ON lr.workflow_request_id = wr.id
 
         LEFT JOIN employee_contracts employee_contract
           ON employee_contract.user_id = wr.user_id
@@ -414,4 +436,42 @@ export async function saveWorkflowDiscordMessage(
   }
 
   return message;
+}
+
+export async function getWorkflowDiscordActorName(
+  userId: number,
+): Promise<string> {
+  const [rows] = await db.execute<WorkflowDiscordActorNameRow[]>(
+    `
+      SELECT
+        NULLIF(
+          TRIM(
+            CONCAT_WS(
+              ' ',
+              employee_contract.first_name,
+              employee_contract.last_name
+            )
+          ),
+          ''
+        ) AS display_name,
+        u.username
+
+      FROM users u
+
+      LEFT JOIN employee_contracts employee_contract
+        ON employee_contract.user_id = u.id
+
+      WHERE u.id = ?
+      LIMIT 1
+    `,
+    [userId],
+  );
+
+  const user = rows[0];
+
+  if (!user) {
+    return "Administrator necunoscut";
+  }
+
+  return user.display_name?.trim() || user.username;
 }

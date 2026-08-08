@@ -11,6 +11,14 @@ import {
   deleteOwnPendingLeaveRequest,
 } from "../database/leaves";
 
+import {
+  deletePreparedWorkflowDiscordMessageSafe,
+  markWorkflowDiscordMessageDeletedByAdminSafe,
+  prepareWorkflowDiscordAdminDelete,
+  prepareWorkflowDiscordMessageDelete,
+  syncWorkflowDiscordMessageSafe,
+} from "../discord/workflowMessages";
+
 import { requireAdmin } from "../services/requireAdmin";
 import { requireAuth } from "../services/requireAuth";
 import { runLeaveStatusSync } from "../services/leaveStatusSync";
@@ -67,6 +75,8 @@ router.post("/", requireAuth, async (req, res) => {
       endDate,
       reason,
     });
+
+    void syncWorkflowDiscordMessageSafe(leave.workflow.id);
 
     return res.status(201).json({
       success: true,
@@ -218,7 +228,10 @@ router.post("/:id/approve", requireAdmin, async (req, res) => {
      * modifică nimic acum și îl va activa la 00:00
      * în ziua potrivită.
      */
+
     await runLeaveStatusSync();
+
+    void syncWorkflowDiscordMessageSafe(workflowRequestId);
 
     return res.json({
       success: true,
@@ -280,6 +293,8 @@ router.post("/:id/reject", requireAdmin, async (req, res) => {
       rejectionReason,
     });
 
+    void syncWorkflowDiscordMessageSafe(workflowRequestId);
+
     return res.json({
       success: true,
       message: "Cererea de concediu a fost respinsă.",
@@ -323,10 +338,15 @@ router.delete("/me/:id", requireAuth, async (req, res) => {
       });
     }
 
+    const discordMessage =
+      await prepareWorkflowDiscordMessageDelete(workflowRequestId);
+
     const deletedLeave = await deleteOwnPendingLeaveRequest(
       workflowRequestId,
       userId,
     );
+
+    void deletePreparedWorkflowDiscordMessageSafe(discordMessage);
 
     return res.json({
       success: true,
@@ -355,6 +375,14 @@ router.delete("/me/:id", requireAuth, async (req, res) => {
 router.delete("/:id", requireAdmin, async (req, res) => {
   try {
     const workflowRequestId = Number(req.params.id);
+    const adminId = req.session.user?.id;
+
+    if (!adminId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized.",
+      });
+    }
 
     if (!Number.isInteger(workflowRequestId) || workflowRequestId <= 0) {
       return res.status(400).json({
@@ -363,18 +391,16 @@ router.delete("/:id", requireAdmin, async (req, res) => {
       });
     }
 
+    const discordDelete = await prepareWorkflowDiscordAdminDelete(
+      workflowRequestId,
+      adminId,
+    );
+
     const deletedLeave = await deleteLeaveRequest(workflowRequestId);
 
-    /*
-     * Recalculăm imediat statusurile.
-     *
-     * Dacă tocmai am șters concediul activ al userului
-     * și nu mai există alt concediu APPROVED activ:
-     *
-     * CONCEDIU -> ACTIV
-     * observations -> NULL
-     */
     await runLeaveStatusSync();
+
+    void markWorkflowDiscordMessageDeletedByAdminSafe(discordDelete);
 
     return res.json({
       success: true,

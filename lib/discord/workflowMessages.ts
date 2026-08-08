@@ -1,14 +1,110 @@
 import { EmbedBuilder } from "discord.js";
 
 import {
+  getWorkflowDiscordActorName,
   getWorkflowDiscordChannelByTypeCode,
   getWorkflowDiscordMessage,
   getWorkflowDiscordRequestSnapshot,
   saveWorkflowDiscordMessage,
+  type WorkflowDiscordMessage,
   type WorkflowDiscordRequestSnapshot,
 } from "../database/discord/workflowDiscord";
 
 import { discordClient, startDiscordClient } from "./client";
+
+export async function prepareWorkflowDiscordMessageDelete(
+  workflowRequestId: number,
+): Promise<WorkflowDiscordMessage | null> {
+  return getWorkflowDiscordMessage(workflowRequestId);
+}
+
+export async function deletePreparedWorkflowDiscordMessageSafe(
+  savedMessage: WorkflowDiscordMessage | null,
+): Promise<void> {
+  if (!savedMessage) {
+    return;
+  }
+
+  try {
+    const message = await getSavedDiscordMessage(savedMessage);
+
+    await message.delete();
+  } catch (error) {
+    console.warn(
+      `⚠️ Prepared Discord workflow message delete failed for request ${savedMessage.workflowRequestId}.`,
+    );
+
+    console.warn(error);
+  }
+}
+
+export interface PrepareWorkflowDiscordAdminDeleteResult {
+  request: WorkflowDiscordRequestSnapshot;
+  message: WorkflowDiscordMessage | null;
+  deletedByName: string;
+  deletedAt: Date;
+}
+
+export async function prepareWorkflowDiscordAdminDelete(
+  workflowRequestId: number,
+  adminId: number,
+): Promise<PrepareWorkflowDiscordAdminDeleteResult | null> {
+  const request = await getWorkflowDiscordRequestSnapshot(workflowRequestId);
+
+  if (!request) {
+    return null;
+  }
+
+  const [message, deletedByName] = await Promise.all([
+    getWorkflowDiscordMessage(workflowRequestId),
+    getWorkflowDiscordActorName(adminId),
+  ]);
+
+  return {
+    request,
+    message,
+    deletedByName,
+    deletedAt: new Date(),
+  };
+}
+
+export async function markWorkflowDiscordMessageDeletedByAdmin(
+  prepared: PrepareWorkflowDiscordAdminDeleteResult,
+): Promise<void> {
+  if (!prepared.message) {
+    return;
+  }
+
+  const message = await getSavedDiscordMessage(prepared.message);
+
+  const embed = buildDeletedLeaveEmbed(
+    prepared.request,
+    prepared.deletedByName,
+    prepared.deletedAt,
+  );
+
+  await message.edit({
+    embeds: [embed],
+  });
+}
+
+export async function markWorkflowDiscordMessageDeletedByAdminSafe(
+  prepared: PrepareWorkflowDiscordAdminDeleteResult | null,
+): Promise<void> {
+  if (!prepared) {
+    return;
+  }
+
+  try {
+    await markWorkflowDiscordMessageDeletedByAdmin(prepared);
+  } catch (error) {
+    console.warn(
+      `⚠️ Discord workflow admin-delete update failed for request ${prepared.request.workflowRequestId}.`,
+    );
+
+    console.warn(error);
+  }
+}
 
 function formatDiscordDate(value: string | Date | null): string {
   if (!value) {
@@ -30,12 +126,20 @@ function formatDiscordDate(value: string | Date | null): string {
   }).format(date);
 }
 
-function formatEffectiveDate(value: string | Date | null): string {
+function formatDateOnly(value: string | Date | null): string {
   if (!value) {
     return "—";
   }
 
-  const date = value instanceof Date ? value : new Date(`${value}T00:00:00`);
+  let date: Date;
+
+  if (value instanceof Date) {
+    date = value;
+  } else {
+    const normalizedValue = value.includes("T") ? value.slice(0, 10) : value;
+
+    date = new Date(`${normalizedValue}T00:00:00`);
+  }
 
   if (Number.isNaN(date.getTime())) {
     return "—";
@@ -47,6 +151,58 @@ function formatEffectiveDate(value: string | Date | null): string {
     year: "numeric",
   }).format(date);
 }
+
+function formatEffectiveDate(value: string | Date | null): string {
+  return formatDateOnly(value);
+}
+
+function parseDateOnly(value: string | Date | null): Date | null {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+
+  const normalizedValue = value.includes("T") ? value.slice(0, 10) : value;
+
+  const [year, month, day] = normalizedValue.split("-").map(Number);
+
+  if (!year || !month || !day) {
+    return null;
+  }
+
+  const date = new Date(year, month - 1, day);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date;
+}
+
+function getLeaveDuration(
+  startDate: string | Date | null,
+  endDate: string | Date | null,
+): number | null {
+  const start = parseDateOnly(startDate);
+  const end = parseDateOnly(endDate);
+
+  if (!start || !end || end < start) {
+    return null;
+  }
+
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+
+  return Math.floor((end.getTime() - start.getTime()) / millisecondsPerDay) + 1;
+}
+
+/*
+|--------------------------------------------------------------------------
+| RESIGNATION
+|--------------------------------------------------------------------------
+*/
 
 function buildResignationEmbed(request: WorkflowDiscordRequestSnapshot) {
   const isRejected = request.statusCode === "REJECTED";
@@ -161,10 +317,217 @@ function buildResignationEmbed(request: WorkflowDiscordRequestSnapshot) {
   return embed;
 }
 
+/*
+|--------------------------------------------------------------------------
+| LEAVE
+|--------------------------------------------------------------------------
+*/
+
+function buildLeaveEmbed(request: WorkflowDiscordRequestSnapshot) {
+  const isPending = request.statusCode === "PENDING";
+
+  const isApproved = request.statusCode === "APPROVED";
+
+  const isRejected = request.statusCode === "REJECTED";
+
+  const embedColor = isRejected ? 0xef4444 : isApproved ? 0x22c55e : 0xb8904d;
+
+  const duration = getLeaveDuration(
+    request.leaveStartDate,
+    request.leaveEndDate,
+  );
+
+  const durationLabel =
+    duration === null ? "—" : `${duration} ${duration === 1 ? "zi" : "zile"}`;
+
+  const embed = new EmbedBuilder()
+    .setColor(embedColor)
+    .setTitle(`${request.requestNumber} · Cerere de concediu`)
+    .addFields(
+      {
+        name: "👤 Angajat",
+        value: request.employeeName,
+        inline: true,
+      },
+      {
+        name: "📅 De la",
+        value: formatDateOnly(request.leaveStartDate),
+        inline: true,
+      },
+      {
+        name: "📅 Până la",
+        value: formatDateOnly(request.leaveEndDate),
+        inline: true,
+      },
+      {
+        name: "⏱️ Durată",
+        value: durationLabel,
+        inline: true,
+      },
+      {
+        name: "\u200B",
+        value: "\u200B",
+        inline: true,
+      },
+      {
+        name: "\u200B",
+        value: "\u200B",
+        inline: true,
+      },
+      {
+        name: "📝 Motiv",
+        value: request.reason?.trim() || "Motiv indisponibil.",
+        inline: false,
+      },
+    );
+
+  if (isPending) {
+    embed.addFields({
+      name: "⏳ Status",
+      value: "**În așteptarea aprobării**",
+      inline: false,
+    });
+  }
+
+  if (isApproved) {
+    embed.addFields({
+      name: "✅ Status",
+      value: "**Cerere aprobată**",
+      inline: true,
+    });
+
+    if (request.reviewedByName && request.reviewedAt) {
+      embed.addFields(
+        {
+          name: "🛡️ Aprobată de",
+          value: `**${request.reviewedByName}**`,
+          inline: true,
+        },
+        {
+          name: "📅 Data aprobării",
+          value: formatDiscordDate(request.reviewedAt),
+          inline: true,
+        },
+      );
+    }
+  }
+
+  if (isRejected) {
+    embed.addFields({
+      name: "❌ Status",
+      value: "**Cerere respinsă**",
+      inline: true,
+    });
+
+    embed.addFields({
+      name: "👤 Respinsă de",
+      value: request.reviewedByName ?? "Administrator",
+      inline: true,
+    });
+
+    embed.addFields({
+      name: "📅 Data respingerii",
+      value: request.reviewedAt ? formatDiscordDate(request.reviewedAt) : "—",
+      inline: true,
+    });
+  }
+
+  embed
+    .setFooter({
+      text: `THE BLACKFOLD SKATEHOUSE  •  ${request.requestNumber}`,
+    })
+    .setTimestamp();
+
+  return embed;
+}
+
+function buildDeletedLeaveEmbed(
+  request: WorkflowDiscordRequestSnapshot,
+  deletedByName: string,
+  deletedAt: Date,
+) {
+  const duration = getLeaveDuration(
+    request.leaveStartDate,
+    request.leaveEndDate,
+  );
+
+  const durationLabel =
+    duration === null ? "—" : `${duration} ${duration === 1 ? "zi" : "zile"}`;
+
+  return new EmbedBuilder()
+    .setColor(0xef4444)
+    .setTitle(`${request.requestNumber} · Cerere de concediu`)
+    .addFields(
+      {
+        name: "👤 Angajat",
+        value: request.employeeName,
+        inline: true,
+      },
+      {
+        name: "📅 De la",
+        value: formatDateOnly(request.leaveStartDate),
+        inline: true,
+      },
+      {
+        name: "📅 Până la",
+        value: formatDateOnly(request.leaveEndDate),
+        inline: true,
+      },
+      {
+        name: "⏱️ Durată",
+        value: durationLabel,
+        inline: true,
+      },
+      {
+        name: "\u200B",
+        value: "\u200B",
+        inline: true,
+      },
+      {
+        name: "\u200B",
+        value: "\u200B",
+        inline: true,
+      },
+      {
+        name: "📝 Motiv",
+        value: request.reason?.trim() || "Motiv indisponibil.",
+        inline: false,
+      },
+      {
+        name: "🗑️ Status",
+        value: "**Șters**",
+        inline: true,
+      },
+      {
+        name: "👤 Șters de",
+        value: `**${deletedByName}**`,
+        inline: true,
+      },
+      {
+        name: "📅 Data ștergerii",
+        value: formatDiscordDate(deletedAt),
+        inline: true,
+      },
+    )
+    .setFooter({
+      text: `THE BLACKFOLD SKATEHOUSE  •  ${request.requestNumber}`,
+    })
+    .setTimestamp(deletedAt);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Workflow embed resolver
+|--------------------------------------------------------------------------
+*/
+
 function buildWorkflowEmbed(request: WorkflowDiscordRequestSnapshot) {
   switch (request.workflowTypeCode) {
     case "RESIGNATION":
       return buildResignationEmbed(request);
+
+    case "LEAVE":
+      return buildLeaveEmbed(request);
 
     default:
       throw new Error(
@@ -172,6 +535,12 @@ function buildWorkflowEmbed(request: WorkflowDiscordRequestSnapshot) {
       );
   }
 }
+
+/*
+|--------------------------------------------------------------------------
+| Discord workflow synchronization
+|--------------------------------------------------------------------------
+*/
 
 export async function syncWorkflowDiscordMessage(
   workflowRequestId: number,
@@ -250,6 +619,50 @@ export async function syncWorkflowDiscordMessage(
     discordChannelId: configuration.discordChannelId,
     discordMessageId: message.id,
   });
+}
+
+async function getSavedDiscordMessage(savedMessage: WorkflowDiscordMessage) {
+  await startDiscordClient();
+
+  const channel = await discordClient.channels.fetch(
+    savedMessage.discordChannelId,
+  );
+
+  if (!channel || !channel.isSendable()) {
+    throw new Error(
+      `Discord channel ${savedMessage.discordChannelId} is not sendable.`,
+    );
+  }
+
+  return channel.messages.fetch(savedMessage.discordMessageId);
+}
+
+export async function deleteWorkflowDiscordMessage(
+  workflowRequestId: number,
+): Promise<void> {
+  const savedMessage = await getWorkflowDiscordMessage(workflowRequestId);
+
+  if (!savedMessage) {
+    return;
+  }
+
+  const message = await getSavedDiscordMessage(savedMessage);
+
+  await message.delete();
+}
+
+export async function deleteWorkflowDiscordMessageSafe(
+  workflowRequestId: number,
+): Promise<void> {
+  try {
+    await deleteWorkflowDiscordMessage(workflowRequestId);
+  } catch (error) {
+    console.warn(
+      `⚠️ Discord workflow message delete failed for request ${workflowRequestId}.`,
+    );
+
+    console.warn(error);
+  }
 }
 
 export async function syncWorkflowDiscordMessageSafe(
