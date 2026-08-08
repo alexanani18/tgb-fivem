@@ -16,9 +16,11 @@ import contractRoutes from "./routes/contracts";
 import uniformRoutes from "./routes/uniforms";
 import ranksRouter from "./routes/ranks";
 import { startupDiscord } from "./discord/startup";
-import resignationsRouter from "./routes/resignations";
 import workflowsRouter from "./routes/workflows";
 import workflowDiscordRouter from "./routes/workflowDiscord";
+import resignationsRouter from "./routes/resignations";
+import leavesRouter from "./routes/leaves";
+import { startLeaveStatusSync } from "./services/leaveStatusSync";
 
 const app = express();
 
@@ -93,9 +95,10 @@ app.use("/users", userRoutes);
 app.use("/contracts", contractRoutes);
 app.use("/api/uniforms", uniformRoutes);
 app.use("/ranks", ranksRouter);
-app.use("/resignations", resignationsRouter);
 app.use("/workflows", workflowsRouter);
 app.use("/workflow-discord", workflowDiscordRouter);
+app.use("/resignations", resignationsRouter);
+app.use("/leaves", leavesRouter);
 
 /*
 |--------------------------------------------------------------------------
@@ -151,6 +154,7 @@ async function startServer() {
 
     console.log("✅ Database connected successfully.");
     await startupDiscord();
+    await startLeaveStatusSync();
 
     app.listen(PORT, () => {
       console.log(`🚀 Express API running on http://localhost:${PORT}`);

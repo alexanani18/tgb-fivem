@@ -8,6 +8,6 @@ SELECT
   NULL,
   0
 FROM `workflow_types`
-WHERE `code` = 'RESIGNATION'
+WHERE `code` IN ('RESIGNATION', 'LEAVE')
 ON DUPLICATE KEY UPDATE
   `workflow_type_id` = VALUES(`workflow_type_id`);

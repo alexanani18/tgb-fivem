@@ -6,12 +6,17 @@ VALUES
     'RES',
     'Resignation Request',
     'Employee resignation workflow'
+  ),
+  (
+    'LEAVE',
+    'LEV',
+    'Leave Request',
+    'Employee leave request workflow'
   )
 ON DUPLICATE KEY UPDATE
   `request_prefix` = VALUES(`request_prefix`),
   `name` = VALUES(`name`),
   `description` = VALUES(`description`);
-
 
 INSERT INTO `workflow_statuses`
   (`code`, `name`, `display_order`)

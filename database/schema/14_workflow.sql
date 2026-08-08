@@ -159,3 +159,29 @@ CREATE TABLE IF NOT EXISTS `resignation_requests` (
 ) ENGINE=InnoDB
 DEFAULT CHARSET=utf8mb4
 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `leave_requests` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `workflow_request_id` bigint NOT NULL,
+
+  `start_date` date NOT NULL,
+  `end_date` date NOT NULL,
+  `reason` varchar(1000) COLLATE utf8mb4_unicode_ci NOT NULL,
+
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (`id`),
+
+  UNIQUE KEY `uq_leave_workflow_request` (`workflow_request_id`),
+
+  KEY `idx_leave_start_date` (`start_date`),
+  KEY `idx_leave_end_date` (`end_date`),
+
+  CONSTRAINT `fk_leave_workflow_request`
+    FOREIGN KEY (`workflow_request_id`)
+    REFERENCES `workflow_requests` (`id`)
+    ON DELETE CASCADE
+) ENGINE=InnoDB
+DEFAULT CHARSET=utf8mb4
+COLLATE=utf8mb4_unicode_ci;
