@@ -118,9 +118,11 @@ app.use(
     }
 
     if (error instanceof Error) {
-      return res.status(400).json({
+      console.error("Unhandled application error:", error);
+
+      return res.status(500).json({
         success: false,
-        message: error.message,
+        message: "Internal server error.",
       });
     }
 
