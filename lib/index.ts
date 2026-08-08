@@ -20,6 +20,7 @@ import workflowsRouter from "./routes/workflows";
 import workflowDiscordRouter from "./routes/workflowDiscord";
 import resignationsRouter from "./routes/resignations";
 import leavesRouter from "./routes/leaves";
+import inactivityRoutes from "./routes/inactivities";
 import { startLeaveStatusSync } from "./services/leaveStatusSync";
 
 const app = express();
@@ -99,6 +100,7 @@ app.use("/workflows", workflowsRouter);
 app.use("/workflow-discord", workflowDiscordRouter);
 app.use("/resignations", resignationsRouter);
 app.use("/leaves", leavesRouter);
+app.use("/inactivities", inactivityRoutes);
 
 /*
 |--------------------------------------------------------------------------

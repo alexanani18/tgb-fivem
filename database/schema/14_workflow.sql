@@ -185,3 +185,32 @@ CREATE TABLE IF NOT EXISTS `leave_requests` (
 ) ENGINE=InnoDB
 DEFAULT CHARSET=utf8mb4
 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `inactivity_requests` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `workflow_request_id` BIGINT NOT NULL,
+
+  `activity` VARCHAR(150) NOT NULL,
+  `activity_date` DATE NOT NULL,
+  `reason` VARCHAR(1000) NOT NULL,
+
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ON UPDATE CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (`id`),
+
+  UNIQUE KEY `uq_inactivity_requests_workflow_request_id`
+    (`workflow_request_id`),
+
+  KEY `idx_inactivity_requests_activity_date`
+    (`activity_date`),
+
+  CONSTRAINT `fk_inactivity_requests_workflow_request`
+    FOREIGN KEY (`workflow_request_id`)
+    REFERENCES `workflow_requests` (`id`)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;

@@ -333,7 +333,8 @@ export default function WorkflowDiscordManagementPage() {
             ) : channels.length === 0 ? (
               <EmptyState />
             ) : (
-              <div className="grid gap-5 xl:grid-cols-2">
+              <div className="grid gap-5 xl:grid-cols-3">
+                {" "}
                 {channels.map((channel) => {
                   const form = forms[channel.workflowTypeId];
 
